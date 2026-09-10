@@ -1,0 +1,27 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "week-on-plate",
+  "main": "src/index.js",
+  "compatibility_date": "2026-09-10",
+  "compatibility_flags": ["nodejs_compat"],
+  "workers_dev": true,
+  "observability": {
+    "enabled": true,
+    "head_sampling_rate": 1
+  },
+  "vars": {
+    "SERVICE_NAME": "week-on-plate",
+    "APP_VERSION": "0.1.0"
+  },
+  "ai": {
+    "binding": "AI"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "week-on-plate-db",
+      "database_id": "b27e2cb2-a847-41ed-96ff-edae9b59acbc",
+      "migrations_dir": "migrations"
+    }
+  ]
+}
