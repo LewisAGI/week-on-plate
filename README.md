@@ -22,6 +22,10 @@ Published fixture passwords, same idea as position-manager. Seeded on migrate / 
 
 These are demonstration logins. Do not reuse them anywhere real.
 
+The API stores `role` on each user. Buyers may create and publish ordinary recipes. Only creators may set `exclusive: true` or `POST /api/packs` — buyers receive `403`. Attaching a recipe to a pack does not flip its exclusivity; creators choose that when they write the recipe.
+
+CORS allowlists the workers.dev host and localhost / emulator origins. Arbitrary origins are not reflected when credentials are on. The Flutter app should send a Bearer token.
+
 ## How Lewis runs the Flutter app on the iOS Simulator
 
 On a Mac with Xcode and the Flutter SDK (`flutter doctor` should show a connected Simulator):

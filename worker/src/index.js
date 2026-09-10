@@ -26,9 +26,7 @@ import {
 } from "./data.js";
 import { TEEN_TIP } from "./domain/scale.js";
 import { ensureSeeded } from "./seed.js";
-import { APP_VERSION, SERVICE_NAME, apiError, json, nowIso, withCors } from "./util.js";
-
-const BUILD_REF = "local";
+import { resolveBuild, resolveVersion, SERVICE_NAME, apiError, json, nowIso, withCors } from "./util.js";
 
 async function health(env) {
   await ensureSeeded(env);
@@ -44,8 +42,8 @@ async function health(env) {
   return json({
     ok: true,
     service: SERVICE_NAME,
-    version: APP_VERSION,
-    build: BUILD_REF,
+    version: resolveVersion(env),
+    build: resolveBuild(env),
     stage: "demonstration",
     auth: "bearer token or session cookie, password login",
     demo_accounts:
@@ -198,12 +196,7 @@ export default {
       return withCors(apiError(404, "not_found", `${method} ${path} is not served.`), request);
     } catch (err) {
       console.error("week-on-plate", err);
-      return withCors(
-        apiError(500, "server_error", "Something went wrong on the server.", {
-          detail: String(err && err.message ? err.message : err),
-        }),
-        request,
-      );
+      return withCors(apiError(500, "server_error", "Something went wrong on the server."), request);
     }
   },
 };

@@ -1,7 +1,25 @@
 const SERVES_RE = /serves?\s+(\d+(?:\.\d+)?)/i;
+const MINUTES_RE = /(\d+)\s*(?:mins?|minutes?)\b/i;
 const QTY_LINE_RE =
   /^\s*(?:[-*•]\s*)?(\d+(?:\.\d+)?)\s*(kg|g|ml|l|tbsp|tsp|cups?|cloves?|x)?\s+(.+?)\s*$/i;
 const BARE_BULLET_RE = /^\s*[-*•]\s+(.+?)\s*$/;
+const TIME_OR_TEMP_NAME_RE = /^(mins?|minutes?|hours?|hrs?|secs?|seconds?|°?\s*[cf])$/i;
+
+function looksLikeIngredientName(name) {
+  const n = String(name || "").trim();
+  if (n.length < 2) return false;
+  return !TIME_OR_TEMP_NAME_RE.test(n);
+}
+
+function pushIngredient(ingredients, name, quantity, unit) {
+  if (!looksLikeIngredientName(name)) return;
+  ingredients.push({
+    name: String(name).replace(/\s+\(.+\)\s*$/, "").trim(),
+    quantity,
+    unit,
+    notes: null,
+  });
+}
 
 export function extractFromCaption(text) {
   const raw = String(text || "").replace(/\r\n/g, "\n").trim();
@@ -15,6 +33,10 @@ export function extractFromCaption(text) {
   let serves = 2;
   const servesHit = raw.match(SERVES_RE);
   if (servesHit) serves = Math.max(1, Number(servesHit[1]));
+
+  let minutes = null;
+  const minutesHit = raw.match(MINUTES_RE);
+  if (minutesHit) minutes = Number(minutesHit[1]);
 
   const ingredients = [];
   const methodLines = [];
@@ -31,17 +53,12 @@ export function extractFromCaption(text) {
     }
     const qty = line.match(QTY_LINE_RE);
     if (qty) {
-      ingredients.push({
-        name: qty[3].replace(/\s+\(.+\)\s*$/, "").trim(),
-        quantity: Number(qty[1]),
-        unit: qty[2] ? qty[2].toLowerCase() : "each",
-        notes: null,
-      });
+      pushIngredient(ingredients, qty[3], Number(qty[1]), qty[2] ? qty[2].toLowerCase() : "each");
       continue;
     }
     if (section === "ingredients") {
       const bullet = line.match(BARE_BULLET_RE);
-      if (bullet) {
+      if (bullet && looksLikeIngredientName(bullet[1])) {
         ingredients.push({ name: bullet[1], quantity: null, unit: "each", notes: null });
         continue;
       }
@@ -55,12 +72,7 @@ export function extractFromCaption(text) {
     for (const line of lines) {
       const qty = line.match(QTY_LINE_RE);
       if (qty) {
-        ingredients.push({
-          name: qty[3].trim(),
-          quantity: Number(qty[1]),
-          unit: qty[2] ? qty[2].toLowerCase() : "each",
-          notes: null,
-        });
+        pushIngredient(ingredients, qty[3], Number(qty[1]), qty[2] ? qty[2].toLowerCase() : "each");
       }
     }
   }
@@ -69,7 +81,7 @@ export function extractFromCaption(text) {
     title,
     summary: url ? `Imported from ${url}` : "Imported from a pasted caption",
     serves,
-    minutes: null,
+    minutes,
     method: methodLines.join("\n"),
     ingredients,
     source_text: raw,

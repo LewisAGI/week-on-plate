@@ -3,6 +3,10 @@ import { apiError, json, newId, nowIso } from "./util.js";
 const PBKDF2_ITERATIONS = 100000;
 const SESSION_DAYS = 7;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const LOGIN_WINDOW_MS = 10 * 60 * 1000;
+const DEFAULT_LOGIN_ATTEMPT_LIMIT = 8;
+
+const loginBuckets = new Map();
 
 export const DEMO_ACCOUNTS = {
   creator: {
@@ -10,14 +14,51 @@ export const DEMO_ACCOUNTS = {
     email: "creator@weekonplate.demo",
     password: "WeekOnPlate-Creator-26",
     display_name: "Sam Taylor",
+    role: "creator",
   },
   buyer: {
     id: "usr_demo_buyer",
     email: "buyer@weekonplate.demo",
     password: "WeekOnPlate-Buyer-26",
     display_name: "Jordan Ellis",
+    role: "buyer",
   },
 };
+
+export function resetLoginRateLimit() {
+  loginBuckets.clear();
+}
+
+function bumpLoginBucket(key, limit, now) {
+  const entry = loginBuckets.get(key);
+  if (!entry || entry.resetAt <= now) {
+    loginBuckets.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
+    return false;
+  }
+  entry.count += 1;
+  return entry.count > limit;
+}
+
+export function clientIp(request) {
+  const forwarded = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "";
+  return forwarded.split(",")[0].trim() || "unknown";
+}
+
+export function isLoginRateLimited(request, email, env) {
+  const limit = Number(env?.LOGIN_ATTEMPT_LIMIT) || DEFAULT_LOGIN_ATTEMPT_LIMIT;
+  const now = Date.now();
+  const ipLimited = bumpLoginBucket(`ip:${clientIp(request)}`, limit, now);
+  const emailLimited = email ? bumpLoginBucket(`email:${email}`, limit, now) : false;
+  return ipLimited || emailLimited;
+}
+
+export function isCreator(user) {
+  return String(user?.role || "") === "creator";
+}
+
+export function creatorOnlyError() {
+  return apiError(403, "creator_only", "Only creators can do that.");
+}
 
 function bytesToB64(bytes) {
   let s = "";
@@ -104,10 +145,12 @@ export async function identify(request, env) {
 }
 
 export function presentUser(user, household) {
+  const role = user.role === "creator" ? "creator" : "buyer";
   return {
     id: user.id,
     email: user.email,
     display_name: user.display_name,
+    role,
     demo_fixture: Number(user.demo_fixture) === 1,
     household: household || { adults: 2, under18s: 0 },
   };
@@ -128,6 +171,9 @@ export async function handleLogin(request, env) {
   const password = typeof body?.password === "string" ? body.password : "";
   if (!EMAIL_RE.test(email) || !password) {
     return apiError(400, "bad_credentials_format", "An email address and a password are both needed.");
+  }
+  if (isLoginRateLimited(request, email, env)) {
+    return apiError(429, "rate_limited", "Too many sign-in attempts. Try again in a few minutes.");
   }
   const user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
   if (!user || !(await verifyPassword(user, password))) {

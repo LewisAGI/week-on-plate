@@ -23,4 +23,14 @@ https://www.instagram.com/reel/example`);
     assert.match(draft.method, /Cook the rice/);
     assert.equal(draft.extractor, "heuristic");
   });
+
+  it("does not invent an ingredient from a time line such as 30 mins", () => {
+    const draft = extractFromCaption(`Lemon roast chicken
+30 mins
+Just some caption waffle and a link
+https://www.instagram.com/reel/example`);
+    assert.equal(draft.ingredients.length, 0);
+    assert.equal(draft.minutes, 30);
+    assert.match(draft.title, /lemon roast chicken/i);
+  });
 });

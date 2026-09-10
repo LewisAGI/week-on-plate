@@ -17,4 +17,13 @@ Method:
     expect(draft['serves'], 2);
     expect((draft['ingredients'] as List).length, 2);
   });
+
+  test('does not invent an ingredient from 30 mins', () {
+    final draft = extractFromCaption('''Lemon roast chicken
+30 mins
+Just some caption waffle
+''');
+    expect(draft['ingredients'], isEmpty);
+    expect(draft['minutes'], 30);
+  });
 }

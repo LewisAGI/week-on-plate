@@ -1,10 +1,10 @@
-import { loadHousehold } from "./auth.js";
+import { creatorOnlyError, isCreator, loadHousehold } from "./auth.js";
 import { COLD_START_STAPLES, suggestAdjustments } from "./domain/cupboard.js";
 import { extractFromCaption, draftFromModelJson } from "./domain/extract.js";
 import { macrosForIngredients, scaleMacros } from "./domain/macros.js";
 import { scaleFactor, scaleQuantity } from "./domain/scale.js";
 import { mergeIngredients, subtractCupboard } from "./domain/shopping.js";
-import { apiError, json, newId, nowIso, clampInt, validSlot, weekDates } from "./util.js";
+import { apiError, json, newId, nowIso, clampInt, parseBoundedInt, rejectUnsafeTitle, validSlot, weekDates } from "./util.js";
 
 export async function purchasedPackIds(env, userId) {
   const { results } = await env.DB.prepare("SELECT pack_id FROM purchases WHERE user_id = ?")
@@ -122,15 +122,20 @@ export async function handleHouseholdGet(env, user) {
 
 export async function handleHouseholdPut(request, env, user) {
   const body = await request.json().catch(() => null);
-  const adults = clampInt(body?.adults, 1, 12, 2);
-  const under18s = clampInt(body?.under18s, 0, 12, 0);
+  if (!body || typeof body !== "object") {
+    return apiError(400, "bad_household", "Adults and under-18s must be whole numbers in range.");
+  }
+  const adults = parseBoundedInt(body.adults, { min: 1, max: 12, name: "Adults" });
+  if (adults.error) return apiError(400, "bad_household", adults.error);
+  const under18s = parseBoundedInt(body.under18s, { min: 0, max: 12, name: "Under-18s" });
+  if (under18s.error) return apiError(400, "bad_household", under18s.error);
   await env.DB.prepare(
     `INSERT INTO households (user_id, adults, under18s, updated_at) VALUES (?, ?, ?, ?)
      ON CONFLICT(user_id) DO UPDATE SET adults = excluded.adults, under18s = excluded.under18s, updated_at = excluded.updated_at`,
   )
-    .bind(user.id, adults, under18s, nowIso())
+    .bind(user.id, adults.value, under18s.value, nowIso())
     .run();
-  return json({ ok: true, household: { adults, under18s } });
+  return json({ ok: true, household: { adults: adults.value, under18s: under18s.value } });
 }
 
 export async function handleRecipeList(url, env, user) {
@@ -186,8 +191,12 @@ function recipeFields(body) {
 
 export async function handleRecipeCreate(request, env, user) {
   const body = await request.json().catch(() => null);
+  if (body?.exclusive && !isCreator(user)) return creatorOnlyError();
   const f = recipeFields(body);
+  if (!isCreator(user)) f.exclusive = 0;
   if (f.title.length < 2) return apiError(400, "bad_title", "Give the recipe a name.");
+  const unsafe = rejectUnsafeTitle(f.title);
+  if (unsafe) return unsafe;
   const id = newId("rcp");
   const ts = nowIso();
   await env.DB.prepare(
@@ -208,8 +217,12 @@ export async function handleRecipeUpdate(request, env, user, id) {
     return apiError(403, "not_yours", "Only the author can edit this recipe.");
   }
   const body = await request.json().catch(() => null);
+  if (body?.exclusive && !isCreator(user)) return creatorOnlyError();
   const f = recipeFields({ ...recipe, ...body, ingredients: body?.ingredients ?? undefined });
+  if (!isCreator(user)) f.exclusive = Number(recipe.exclusive) === 1 ? 1 : 0;
   if (f.title.length < 2) return apiError(400, "bad_title", "Give the recipe a name.");
+  const unsafe = rejectUnsafeTitle(f.title);
+  if (unsafe) return unsafe;
   await env.DB.prepare(
     `UPDATE recipes SET title = ?, summary = ?, method = ?, serves = ?, minutes = ?, published = ?, exclusive = ?, updated_at = ?
      WHERE id = ?`,
@@ -334,6 +347,10 @@ export async function handleWeekPut(request, env, user) {
 }
 
 export async function handleWeekDelete(env, user, id) {
+  const existing = await env.DB.prepare("SELECT id FROM week_slots WHERE id = ? AND user_id = ?")
+    .bind(id, user.id)
+    .first();
+  if (!existing) return apiError(404, "not_found", "That meal is not on your week.");
   await env.DB.prepare("DELETE FROM week_slots WHERE id = ? AND user_id = ?").bind(id, user.id).run();
   return json({ ok: true });
 }
@@ -547,9 +564,12 @@ export async function handlePackList(env, user) {
 }
 
 export async function handlePackCreate(request, env, user) {
+  if (!isCreator(user)) return creatorOnlyError();
   const body = await request.json().catch(() => null);
   const title = String(body?.title || "").trim();
   if (title.length < 2) return apiError(400, "bad_title", "Give the pack a name.");
+  const unsafe = rejectUnsafeTitle(title);
+  if (unsafe) return unsafe;
   const recipeIds = Array.isArray(body?.recipe_ids) ? body.recipe_ids : [];
   if (recipeIds.length === 0) return apiError(400, "empty_pack", "Add at least one of your recipes.");
   for (const rid of recipeIds) {
@@ -567,9 +587,7 @@ export async function handlePackCreate(request, env, user) {
     .run();
   for (const rid of recipeIds) {
     await env.DB.prepare("INSERT INTO pack_recipes (pack_id, recipe_id) VALUES (?, ?)").bind(id, rid).run();
-    await env.DB.prepare("UPDATE recipes SET exclusive = 1, published = 1, updated_at = ? WHERE id = ?")
-      .bind(nowIso(), rid)
-      .run();
+    // Do not flip exclusivity on attach — creators choose exclusive at recipe create/edit time.
   }
   return json({ ok: true, pack_id: id }, { status: 201 });
 }

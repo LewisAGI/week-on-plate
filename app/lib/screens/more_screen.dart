@@ -19,6 +19,10 @@ class MoreScreen extends StatelessWidget {
         children: [
           Text(user['display_name'] as String? ?? '', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: kGreenDark)),
           Text(user['email'] as String? ?? '', style: const TextStyle(color: kMuted)),
+          Text(
+            session.isCreator ? 'Role: creator' : 'Role: buyer',
+            style: const TextStyle(color: kMuted),
+          ),
           const SizedBox(height: 16),
           ListTile(
             contentPadding: EdgeInsets.zero,
@@ -402,7 +406,9 @@ class _PacksScreenState extends State<PacksScreen> {
     return Scaffold(
       appBar: AppBar(
         title: const Text('Creator packs'),
-        actions: [IconButton(onPressed: _create, icon: const Icon(Icons.add))],
+        actions: [
+          if (widget.session.isCreator) IconButton(onPressed: _create, icon: const Icon(Icons.add)),
+        ],
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
