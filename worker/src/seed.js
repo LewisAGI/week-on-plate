@@ -131,8 +131,8 @@ async function insertUser(env, account) {
   const ts = nowIso();
   await env.DB.prepare(
     `INSERT OR IGNORE INTO users
-      (id, email, display_name, password_hash, password_salt, kdf, kdf_iterations, demo_fixture, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?)`,
+      (id, email, display_name, password_hash, password_salt, kdf, kdf_iterations, demo_fixture, role, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)`,
   )
     .bind(
       account.id,
@@ -142,6 +142,7 @@ async function insertUser(env, account) {
       fresh.salt,
       fresh.kdf,
       fresh.kdf_iterations,
+      account.role === "creator" ? "creator" : "buyer",
       ts,
     )
     .run();
@@ -197,7 +198,21 @@ export async function ensureSeeded(env) {
   return seedPromise;
 }
 
+async function ensureFixtureRoles(env) {
+  try {
+    await env.DB.prepare("UPDATE users SET role = ? WHERE id = ?")
+      .bind("creator", DEMO_ACCOUNTS.creator.id)
+      .run();
+    await env.DB.prepare("UPDATE users SET role = ? WHERE id = ?")
+      .bind("buyer", DEMO_ACCOUNTS.buyer.id)
+      .run();
+  } catch {
+    // role column is added by migration 0002
+  }
+}
+
 async function seedNow(env) {
+  await ensureFixtureRoles(env);
   const existing = await env.DB.prepare("SELECT id FROM users WHERE id = ?")
     .bind(DEMO_ACCOUNTS.creator.id)
     .first();

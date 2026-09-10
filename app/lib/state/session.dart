@@ -12,6 +12,7 @@ class Session extends ChangeNotifier {
   bool busy = false;
 
   bool get signedIn => user != null;
+  bool get isCreator => user?['role'] == 'creator';
   Map<String, dynamic> get household =>
       (user?['household'] as Map<String, dynamic>?) ?? {'adults': 2, 'under18s': 0};
 

@@ -3,11 +3,11 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node --test test/*.test.js",
+    "test": "node --experimental-sqlite --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.js",
     "dev": "wrangler dev",
     "migrate:local": "wrangler d1 migrations apply week-on-plate-db --local",
     "migrate:remote": "wrangler d1 migrations apply week-on-plate-db --remote",
-    "deploy": "wrangler d1 migrations apply week-on-plate-db --remote && wrangler deploy"
+    "deploy": "wrangler d1 migrations apply week-on-plate-db --remote && wrangler deploy --var BUILD_SHA:$(git -C .. rev-parse HEAD) --var APP_VERSION:0.1.1"
   },
   "devDependencies": {
     "wrangler": "^4.37.0"

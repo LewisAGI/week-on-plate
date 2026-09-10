@@ -338,11 +338,12 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
             value: publish,
             onChanged: (v) => setState(() => publish = v),
           ),
-          SwitchListTile(
-            title: const Text('Exclusive to a pack'),
-            value: exclusive,
-            onChanged: (v) => setState(() => exclusive = v),
-          ),
+          if (widget.session.isCreator)
+            SwitchListTile(
+              title: const Text('Exclusive to a pack'),
+              value: exclusive,
+              onChanged: (v) => setState(() => exclusive = v),
+            ),
           FilledButton(onPressed: busy ? null : _save, child: const Text('Save recipe')),
         ],
       ),

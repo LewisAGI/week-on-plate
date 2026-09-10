@@ -11,7 +11,8 @@
   },
   "vars": {
     "SERVICE_NAME": "week-on-plate",
-    "APP_VERSION": "0.1.0"
+    "APP_VERSION": "0.1.1",
+    "BUILD_SHA": "local"
   },
   "ai": {
     "binding": "AI"
