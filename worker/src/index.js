@@ -1,10 +1,12 @@
 import { handleLogin, handleLogout, handleMe, identify } from "./auth.js";
 import {
   handleColdStart,
+  handleCupboardAdd,
   handleCupboardAdjust,
   handleCupboardGet,
   handleCupboardPatch,
   handleCupboardPut,
+  handleCupboardScan,
   handleHouseholdGet,
   handleHouseholdPut,
   handleImportConfirm,
@@ -169,6 +171,12 @@ export default {
       }
       if (path === "/api/cupboard/cold-start" && method === "POST") {
         return withCors(await handleColdStart(request, env, user), request);
+      }
+      if (path === "/api/cupboard/items" && method === "POST") {
+        return withCors(await handleCupboardAdd(request, env, user), request);
+      }
+      if (path === "/api/cupboard/scan" && method === "POST") {
+        return withCors(await handleCupboardScan(request, env, user), request);
       }
       p = match(path, "/api/cupboard/:id");
       if (p && method === "PATCH") return withCors(await handleCupboardPatch(request, env, user, p.id), request);

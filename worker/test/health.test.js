@@ -6,7 +6,7 @@ import { DEMO_ACCOUNTS } from "../src/auth.js";
 describe("health contract", () => {
   it("names the service and publishes demo logins", () => {
     assert.equal(SERVICE_NAME, "week-on-plate");
-    assert.equal(APP_VERSION, "0.1.1");
+    assert.equal(APP_VERSION, "0.1.2");
     assert.equal(DEMO_ACCOUNTS.creator.email, "creator@weekonplate.demo");
     assert.equal(DEMO_ACCOUNTS.creator.role, "creator");
     assert.equal(DEMO_ACCOUNTS.buyer.email, "buyer@weekonplate.demo");

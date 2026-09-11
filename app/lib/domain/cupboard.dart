@@ -1,5 +1,36 @@
 import 'shopping.dart';
 
+final _qtyLineRe = RegExp(
+  r'^\s*(?:[-*•]\s*)?(\d+(?:\.\d+)?)\s*(kg|g|ml|l|tbsp|tsp|cups?|cloves?|x)?\s+(.+?)\s*$',
+  caseSensitive: false,
+);
+final _skipLineRe = RegExp(
+  r'^(buy|shopping list|cupboard|already have|groceries|items?)\b',
+  caseSensitive: false,
+);
+
+/// Parse a typed or OCR'd shopping list into cupboard-shaped items.
+List<Map<String, dynamic>> parseShoppingListText(String text) {
+  final items = <Map<String, dynamic>>[];
+  for (final raw in text.replaceAll('\r\n', '\n').split('\n')) {
+    final line = raw.trim();
+    if (line.isEmpty || _skipLineRe.hasMatch(line)) continue;
+    final qty = _qtyLineRe.firstMatch(line);
+    final qtyName = qty?.group(3)?.trim() ?? '';
+    if (qty != null && qtyName.length >= 2) {
+      items.add({
+        'name': qtyName,
+        'quantity': num.parse(qty.group(1)!),
+        'unit': (qty.group(2) ?? 'each').toLowerCase(),
+      });
+      continue;
+    }
+    final bare = line.replaceFirst(RegExp(r'^[-*•]\s*'), '').replaceFirst(RegExp(r'^\d+[.)]\s*'), '').trim();
+    if (bare.length >= 2) items.add({'name': bare, 'quantity': null, 'unit': 'each'});
+  }
+  return items;
+}
+
 const coldStartStaples = [
   {'name': 'Olive oil', 'unit': 'ml', 'quantity': 250},
   {'name': 'Salt', 'unit': 'g', 'quantity': 200},

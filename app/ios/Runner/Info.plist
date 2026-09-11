@@ -26,6 +26,10 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>Take a photo of your shopping list to add items you already own to the cupboard.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Choose a photo of your shopping list to add items you already own to the cupboard.</string>
 	<key>NSAppTransportSecurity</key>
 	<dict>
 		<key>NSAllowsLocalNetworking</key>

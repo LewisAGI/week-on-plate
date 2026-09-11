@@ -2,7 +2,7 @@ const int defaultAdults = 2;
 const int defaultUnder18s = 0;
 
 const String teenTip =
-    'Older teenagers often eat like adults. If that is your house, count them as adults rather than under-18s.';
+    'For teens: consider teenage eating habits. Some eat like adults — count them that way if that is your house.';
 
 int householdHeads(int adults, int under18s) {
   final a = adults < 0 ? 0 : adults;
