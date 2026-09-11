@@ -36,7 +36,7 @@ export function createMemoryD1() {
 export function testEnv(overrides = {}) {
   return {
     DB: createMemoryD1(),
-    APP_VERSION: "0.1.1",
+    APP_VERSION: "0.1.2",
     BUILD_SHA: "testdeadbeef",
     LOGIN_ATTEMPT_LIMIT: 20,
     ...overrides,

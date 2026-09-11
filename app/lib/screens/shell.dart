@@ -36,7 +36,7 @@ class _AppShellState extends State<AppShell> {
         destinations: const [
           NavigationDestination(icon: Icon(Icons.calendar_view_week_outlined), label: 'Week'),
           NavigationDestination(icon: Icon(Icons.restaurant_outlined), label: 'Recipes'),
-          NavigationDestination(icon: Icon(Icons.shopping_basket_outlined), label: 'Shop'),
+          NavigationDestination(icon: Icon(Icons.shopping_basket_outlined), label: 'Groceries'),
           NavigationDestination(icon: Icon(Icons.kitchen_outlined), label: 'Cupboard'),
           NavigationDestination(icon: Icon(Icons.more_horiz), label: 'More'),
         ],

@@ -49,7 +49,7 @@ flutter devices
 flutter run -d "iPhone 16"
 ```
 
-The login screen can fill account A or B. After sign-in you get Week, Recipes, Shop, Cupboard, More.
+The login screen can fill account A or B. After sign-in you get Week, Recipes, Groceries, Cupboard, More.
 
 ### Point the app at a Worker
 
@@ -107,17 +107,17 @@ On first boot the Worker writes:
 - Five public house recipes (lemon chicken, overnight oats, chickpea stew, salmon and rice, turkey chilli)
 - A creator pack, **Weeknight plates** (£9 stub): miso salmon traybake + cottage cheese pancakes (exclusive until purchased)
 
-Household default: **2 adults**, 0 under-18s. The household screen explains that older teenagers often eat like adults — count them as adults if that is your house.
+Household default: **2 adults**, 0 under-18s. The household screen keeps the teen note light: consider teenage eating habits, and count teens as adults if that is your house.
 
 ## Smoke path (A then B)
 
 1. Sign in as **A**. Create a recipe (publish it). Create a pack from More → Creator packs.
 2. Sign out. Sign in as **B**.
 3. Browse / save a house recipe. Add meals to **This week**.
-4. Open **Shop** — merged ingredients, cupboard-aware, no supermarket prices.
-5. **Cupboard** — cold-start staples; untick as used. Mark a meal cooked and accept stock adjustments.
+4. Open **Groceries** — a shopping list from the week plan, cupboard-aware, no checkout and no supermarket prices.
+5. **Cupboard** — cold-start staples, manual add for what you already own, or scan a shopping list (photo or typed). Untick as used. Mark a meal cooked and accept stock adjustments.
 6. **More → Import** — paste a caption (a sample is pre-filled) → confirm screen → save.
-7. Open a day on the week plan and read **macros** (kcal, protein, carbs, fat, sugar).
+7. Open **This week**, tap a day on the Mon–Sun strip, and read that day’s totals plus one card per meal (macros, ingredients, numbered method).
 8. **Creator packs** → stub-buy **Weeknight plates**. Exclusive recipes then appear under Browse.
 
 ## Tests

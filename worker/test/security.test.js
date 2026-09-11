@@ -75,10 +75,10 @@ describe("adversarial fixes", { concurrency: false }, () => {
     assert.equal(local["access-control-allow-credentials"], "true");
   });
 
-  it("stamps health version 0.1.1 and a real build SHA", async () => {
+  it("stamps health version 0.1.2 and a real build SHA", async () => {
     const { res, data } = await jsonOf(await worker.fetch(req("/api/health"), env));
     assert.equal(res.status, 200);
-    assert.equal(data.version, "0.1.1");
+    assert.equal(data.version, "0.1.2");
     assert.equal(data.build, "testdeadbeef");
     assert.notEqual(data.build, "local");
   });

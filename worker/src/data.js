@@ -1,10 +1,11 @@
 import { creatorOnlyError, isCreator, loadHousehold } from "./auth.js";
-import { COLD_START_STAPLES, suggestAdjustments } from "./domain/cupboard.js";
+import { COLD_START_STAPLES, parseShoppingListText, suggestAdjustments } from "./domain/cupboard.js";
 import { extractFromCaption, draftFromModelJson } from "./domain/extract.js";
 import { macrosForIngredients, scaleMacros } from "./domain/macros.js";
-import { scaleFactor, scaleQuantity } from "./domain/scale.js";
-import { mergeIngredients, subtractCupboard } from "./domain/shopping.js";
-import { apiError, json, newId, nowIso, clampInt, parseBoundedInt, rejectUnsafeTitle, validSlot, weekDates } from "./util.js";
+import { methodToSteps, normalizeMethodInput } from "./domain/method.js";
+import { scaleFactor, scaleQuantity, TEEN_TIP } from "./domain/scale.js";
+import { mergeIngredients, subtractCupboard, normalizeName, canonicalUnit } from "./domain/shopping.js";
+import { apiError, json, newId, nowIso, clampInt, parseBoundedInt, rejectUnsafeTitle, validSlot, weekDates, SLOTS } from "./util.js";
 
 export async function purchasedPackIds(env, userId) {
   const { results } = await env.DB.prepare("SELECT pack_id FROM purchases WHERE user_id = ?")
@@ -64,12 +65,14 @@ export async function presentRecipe(env, recipe, user, extra = {}) {
   }));
   const macros = macrosForIngredients(ingredients);
   const saved = extra.savedIds ? extra.savedIds.has(recipe.id) : false;
+  const methodSteps = methodToSteps(recipe.method);
   return {
     id: recipe.id,
     author_id: recipe.author_id,
     title: recipe.title,
     summary: recipe.summary,
-    method: recipe.method,
+    method: methodSteps.join("\n"),
+    method_steps: methodSteps,
     serves: Number(recipe.serves),
     minutes: recipe.minutes == null ? null : Number(recipe.minutes),
     published: Number(recipe.published) === 1,
@@ -117,7 +120,7 @@ export async function replaceIngredients(env, recipeId, ingredients) {
 }
 
 export async function handleHouseholdGet(env, user) {
-  return json({ ok: true, household: await loadHousehold(env, user.id) });
+  return json({ ok: true, household: await loadHousehold(env, user.id), teen_tip: TEEN_TIP });
 }
 
 export async function handleHouseholdPut(request, env, user) {
@@ -179,7 +182,7 @@ function recipeFields(body) {
   return {
     title: String(body?.title || "").trim(),
     summary: String(body?.summary || "").trim(),
-    method: String(body?.method || "").trim(),
+    method: normalizeMethodInput(body),
     serves: clampInt(body?.serves, 1, 20, 2),
     minutes: body?.minutes == null || body?.minutes === "" ? null : clampInt(body.minutes, 1, 600, null),
     published: body?.published ? 1 : 0,
@@ -309,6 +312,7 @@ export async function handleWeekGet(url, env, user) {
       };
     }
     byDay[d].macros = macros;
+    byDay[d].slots.sort((a, b) => SLOTS.indexOf(a.slot) - SLOTS.indexOf(b.slot));
   }
   return json({ ok: true, start: dates[0], days: dates.map((d) => byDay[d]), household });
 }
@@ -493,6 +497,137 @@ export async function handleColdStart(request, env, user) {
       .run();
   }
   return handleCupboardGet(env, user);
+}
+
+function normaliseCupboardItem(item) {
+  const name = String(item?.name || "").trim();
+  if (!name) return null;
+  return {
+    name,
+    quantity: item.quantity == null || item.quantity === "" ? null : Number(item.quantity),
+    unit: String(item.unit || "each"),
+    in_stock: item.in_stock === 0 ? 0 : 1,
+  };
+}
+
+export async function upsertCupboardItems(env, user, incoming) {
+  const ts = nowIso();
+  const { results } = await env.DB.prepare("SELECT * FROM cupboard_items WHERE user_id = ?")
+    .bind(user.id)
+    .all();
+  const existing = results || [];
+  let added = 0;
+  for (const raw of incoming || []) {
+    const item = normaliseCupboardItem(raw);
+    if (!item) continue;
+    const match = existing.find(
+      (row) =>
+        normalizeName(row.name) === normalizeName(item.name) &&
+        canonicalUnit(row.unit).unit === canonicalUnit(item.unit).unit,
+    );
+    if (match) {
+      const nextQty =
+        item.quantity == null
+          ? match.quantity
+          : match.quantity == null
+            ? item.quantity
+            : Number(match.quantity) + Number(item.quantity);
+      await env.DB.prepare(
+        "UPDATE cupboard_items SET quantity = ?, in_stock = 1, updated_at = ? WHERE id = ? AND user_id = ?",
+      )
+        .bind(nextQty, ts, match.id, user.id)
+        .run();
+      match.quantity = nextQty;
+      match.in_stock = 1;
+    } else {
+      const id = newId("cup");
+      await env.DB.prepare(
+        `INSERT INTO cupboard_items (id, user_id, name, quantity, unit, in_stock, updated_at)
+         VALUES (?, ?, ?, ?, ?, 1, ?)`,
+      )
+        .bind(id, user.id, item.name, item.quantity, item.unit, ts)
+        .run();
+      existing.push({ id, name: item.name, quantity: item.quantity, unit: item.unit, in_stock: 1 });
+      added += 1;
+    }
+  }
+  return { added, items: existing };
+}
+
+export async function handleCupboardAdd(request, env, user) {
+  const body = await request.json().catch(() => null);
+  const incoming = Array.isArray(body?.items) ? body.items : body?.name ? [body] : [];
+  if (!incoming.length) {
+    return apiError(400, "empty", "Add at least one item you already have.");
+  }
+  await upsertCupboardItems(env, user, incoming);
+  return handleCupboardGet(env, user);
+}
+
+function itemsFromModelJson(raw) {
+  let parsed = raw;
+  if (typeof raw === "string") {
+    const match = raw.match(/\[[\s\S]*\]|\{[\s\S]*\}/);
+    if (!match) return [];
+    try {
+      parsed = JSON.parse(match[0]);
+    } catch {
+      return [];
+    }
+  }
+  const list = Array.isArray(parsed) ? parsed : Array.isArray(parsed?.items) ? parsed.items : [];
+  return list.map(normaliseCupboardItem).filter(Boolean);
+}
+
+async function tryVisionShoppingList(env, imageBase64) {
+  if (!env.AI || !imageBase64) return null;
+  try {
+    const result = await env.AI.run("@cf/meta/llama-3.2-11b-vision-instruct", {
+      messages: [
+        {
+          role: "user",
+          content: [
+            {
+              type: "text",
+              text: "Read this shopping list or receipt. Return JSON {items:[{name,quantity,unit}]} only. British grocery names. quantity number or null. unit g, ml, each or similar.",
+            },
+            { type: "image", image: String(imageBase64).replace(/^data:[^;]+;base64,/, "") },
+          ],
+        },
+      ],
+    });
+    const raw = typeof result === "string" ? result : result?.response || result?.result || "";
+    const items = itemsFromModelJson(raw);
+    return items.length ? items : null;
+  } catch {
+    return null;
+  }
+}
+
+export async function handleCupboardScan(request, env, user) {
+  const body = await request.json().catch(() => null);
+  const text = String(body?.text || "").trim();
+  const image = String(body?.image_base64 || body?.image || "").trim();
+  if (!text && !image) {
+    return apiError(400, "empty", "Photograph the list, or type what you bought.");
+  }
+  if (image && image.length > 3_500_000) {
+    return apiError(400, "too_large", "That photo is a bit large. Try a closer crop, or type the list.");
+  }
+  const fromVision = image ? await tryVisionShoppingList(env, image) : null;
+  const fromText = text ? parseShoppingListText(text) : [];
+  const items = fromVision && fromVision.length ? fromVision : fromText;
+  const extractor = fromVision && fromVision.length ? "workers-ai-vision" : text ? "heuristic" : "none";
+  return json({
+    ok: true,
+    items,
+    extractor,
+    needs_confirm: true,
+    message:
+      items.length === 0
+        ? "Could not read that photo yet. Type or paste the list and we will pick out the items."
+        : "Check these before they go in the cupboard. Nothing is saved until you confirm.",
+  });
 }
 
 async function tryWorkersAi(env, text) {

@@ -9,7 +9,7 @@ const HOUSE = [
     serves: 4,
     minutes: 55,
     method:
-      "Heat the oven to 200°C. Toss potatoes, chicken, lemon, garlic and oil on a tin. Roast 45–50 minutes until the chicken is cooked through. Rest five minutes, then serve.",
+      "Heat the oven to 200°C.\nToss potatoes, chicken, lemon, garlic and oil on a tin.\nRoast 45–50 minutes until the chicken is cooked through.\nRest five minutes, then serve.",
     ingredients: [
       { name: "Chicken breast", quantity: 600, unit: "g" },
       { name: "Potatoes", quantity: 800, unit: "g" },
@@ -25,7 +25,7 @@ const HOUSE = [
     serves: 2,
     minutes: 5,
     method:
-      "Stir oats, yoghurt, milk and honey. Cover and chill overnight. Top with berries in the morning.",
+      "Stir oats, yoghurt, milk and honey.\nCover and chill overnight.\nTop with berries in the morning.",
     ingredients: [
       { name: "Rolled oats", quantity: 120, unit: "g" },
       { name: "Greek yoghurt", quantity: 200, unit: "g" },
@@ -41,7 +41,7 @@ const HOUSE = [
     serves: 4,
     minutes: 30,
     method:
-      "Soften onion and garlic in oil. Add tomatoes, chickpeas, cumin and a splash of water. Simmer 15 minutes. Fold in spinach until wilted. Season.",
+      "Soften onion and garlic in oil.\nAdd tomatoes, chickpeas, cumin and a splash of water.\nSimmer 15 minutes.\nFold in spinach until wilted.\nSeason.",
     ingredients: [
       { name: "Onions", quantity: 1, unit: "each" },
       { name: "Garlic", quantity: 2, unit: "each" },
@@ -59,7 +59,7 @@ const HOUSE = [
     serves: 2,
     minutes: 25,
     method:
-      "Cook the rice. Steam broccoli. Pan-fry salmon in a little oil, 4 minutes a side. Lemon over the top.",
+      "Cook the rice.\nSteam broccoli.\nPan-fry salmon in a little oil, 4 minutes a side.\nLemon over the top.",
     ingredients: [
       { name: "Salmon", quantity: 300, unit: "g" },
       { name: "Broccoli", quantity: 300, unit: "g" },
@@ -75,7 +75,7 @@ const HOUSE = [
     serves: 4,
     minutes: 40,
     method:
-      "Brown the turkey. Add onion, garlic, tomatoes, beans, chilli powder and paprika. Simmer 25 minutes. Taste for salt.",
+      "Brown the turkey.\nAdd onion, garlic, tomatoes, beans, chilli powder and paprika.\nSimmer 25 minutes.\nTaste for salt.",
     ingredients: [
       { name: "Turkey mince", quantity: 500, unit: "g" },
       { name: "Onions", quantity: 1, unit: "each" },
@@ -97,7 +97,7 @@ const PACK = [
     minutes: 30,
     exclusive: 1,
     method:
-      "Mix miso, honey and soy. Coat the salmon. Roast with broccoli at 200°C for 18 minutes. Serve with rice.",
+      "Mix miso, honey and soy.\nCoat the salmon.\nRoast with broccoli at 200°C for 18 minutes.\nServe with rice.",
     ingredients: [
       { name: "Salmon", quantity: 300, unit: "g" },
       { name: "Miso", quantity: 1, unit: "tbsp" },
@@ -115,7 +115,7 @@ const PACK = [
     minutes: 20,
     exclusive: 1,
     method:
-      "Blend cottage cheese, eggs and oats. Fry spoonfuls in a lightly oiled pan. Berries on top.",
+      "Blend cottage cheese, eggs and oats.\nFry spoonfuls in a lightly oiled pan.\nBerries on top.",
     ingredients: [
       { name: "Cottage cheese", quantity: 200, unit: "g" },
       { name: "Eggs", quantity: 2, unit: "each" },
@@ -211,8 +211,22 @@ async function ensureFixtureRoles(env) {
   }
 }
 
+async function refreshSeededMethods(env) {
+  for (const recipe of [...HOUSE, ...PACK]) {
+    try {
+      const row = await env.DB.prepare("SELECT method FROM recipes WHERE id = ?").bind(recipe.id).first();
+      if (row?.method && !String(row.method).includes("\n")) {
+        await env.DB.prepare("UPDATE recipes SET method = ? WHERE id = ?").bind(recipe.method, recipe.id).run();
+      }
+    } catch {
+      // recipes table may not exist before migrate
+    }
+  }
+}
+
 async function seedNow(env) {
   await ensureFixtureRoles(env);
+  await refreshSeededMethods(env);
   const existing = await env.DB.prepare("SELECT id FROM users WHERE id = ?")
     .bind(DEMO_ACCOUNTS.creator.id)
     .first();

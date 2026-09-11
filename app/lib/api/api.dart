@@ -103,6 +103,9 @@ class ApiClient {
   Future<Map<String, dynamic>> createRecipe(Map<String, dynamic> body) =>
       _send('POST', '/api/recipes', body: body);
 
+  Future<Map<String, dynamic>> updateRecipe(String id, Map<String, dynamic> body) =>
+      _send('PUT', '/api/recipes/$id', body: body);
+
   Future<Map<String, dynamic>> publishRecipe(String id) =>
       _send('POST', '/api/recipes/$id/publish');
 
@@ -139,6 +142,22 @@ class ApiClient {
 
   Future<Map<String, dynamic>> coldStart(List<String> names) =>
       _send('POST', '/api/cupboard/cold-start', body: {'names': names});
+
+  Future<Map<String, dynamic>> addCupboardItems(List<Map<String, dynamic>> items) async {
+    try {
+      return await _send('POST', '/api/cupboard/items', body: {'items': items});
+    } on ApiException {
+      final current = await cupboard();
+      final existing = (current['items'] as List? ?? []).cast<Map<String, dynamic>>();
+      return _send('PUT', '/api/cupboard', body: {'items': [...existing, ...items]});
+    }
+  }
+
+  Future<Map<String, dynamic>> scanCupboardList({String? text, String? imageBase64}) =>
+      _send('POST', '/api/cupboard/scan', body: {
+        if (text != null && text.isNotEmpty) 'text': text,
+        if (imageBase64 != null && imageBase64.isNotEmpty) 'image_base64': imageBase64,
+      });
 
   Future<Map<String, dynamic>> patchCupboard(String id, Map<String, dynamic> body) =>
       _send('PATCH', '/api/cupboard/$id', body: body);

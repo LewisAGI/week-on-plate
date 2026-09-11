@@ -24,4 +24,12 @@ void main() {
     final after = applyAdjustment({'id': 'c1', 'quantity': 500, 'in_stock': 1}, rice);
     expect(after['quantity'], 340);
   });
+
+  test('parses a typed shopping list into cupboard items', () {
+    final items = parseShoppingListText('Shopping list\n400g chicken breast\nMilk');
+    expect(items.length, 2);
+    expect(items.first['name'], 'chicken breast');
+    expect(items.first['quantity'], 400);
+    expect(items.last['name'], 'Milk');
+  });
 }

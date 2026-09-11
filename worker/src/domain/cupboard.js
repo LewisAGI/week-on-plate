@@ -1,5 +1,30 @@
 import { canonicalUnit, normalizeName } from "./shopping.js";
 
+const QTY_LINE_RE =
+  /^\s*(?:[-*•]\s*)?(\d+(?:\.\d+)?)\s*(kg|g|ml|l|tbsp|tsp|cups?|cloves?|x)?\s+(.+?)\s*$/i;
+const SKIP_LINE_RE = /^(buy|shopping list|cupboard|already have|groceries|items?)\b/i;
+
+/** Parse a typed or OCR'd shopping list into cupboard-shaped items. */
+export function parseShoppingListText(text) {
+  const items = [];
+  for (const raw of String(text || "").replace(/\r\n/g, "\n").split("\n")) {
+    const line = raw.trim();
+    if (!line || SKIP_LINE_RE.test(line)) continue;
+    const qty = line.match(QTY_LINE_RE);
+    if (qty && String(qty[3] || "").trim().length >= 2) {
+      items.push({
+        name: qty[3].trim(),
+        quantity: Number(qty[1]),
+        unit: qty[2] ? qty[2].toLowerCase() : "each",
+      });
+      continue;
+    }
+    const bare = line.replace(/^[-*•]\s*/, "").replace(/^\d+[.)]\s*/, "").trim();
+    if (bare.length >= 2) items.push({ name: bare, quantity: null, unit: "each" });
+  }
+  return items;
+}
+
 export const COLD_START_STAPLES = [
   { name: "Olive oil", unit: "ml", quantity: 250 },
   { name: "Salt", unit: "g", quantity: 200 },

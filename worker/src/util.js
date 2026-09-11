@@ -1,5 +1,5 @@
 export const SERVICE_NAME = "week-on-plate";
-export const APP_VERSION = "0.1.1";
+export const APP_VERSION = "0.1.2";
 
 export const ALLOWED_WEB_HOSTS = new Set([
   "week-on-plate.lewismgodfrey.workers.dev",

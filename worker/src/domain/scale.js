@@ -26,4 +26,4 @@ export const DEFAULT_ADULTS = 2;
 export const DEFAULT_UNDER18S = 0;
 
 export const TEEN_TIP =
-  "Older teenagers often eat like adults. If that is your house, count them as adults rather than under-18s.";
+  "For teens: consider teenage eating habits. Some eat like adults — count them that way if that is your house.";

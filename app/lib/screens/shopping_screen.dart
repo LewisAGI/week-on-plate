@@ -42,7 +42,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
     final have = (data?['already_have'] as List? ?? []).cast<Map<String, dynamic>>();
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Shopping list'),
+        title: const Text('Groceries'),
         actions: [IconButton(onPressed: _load, icon: const Icon(Icons.refresh))],
       ),
       body: loading
@@ -53,7 +53,7 @@ class _ShoppingScreenState extends State<ShoppingScreen> {
                   padding: const EdgeInsets.all(16),
                   children: [
                     const Text(
-                      'Merged from this week’s plan, minus what is already in the cupboard. No supermarket prices — that is out of scope for the MVP.',
+                      'A shopping list from this week’s plan, minus what is already in the cupboard. No checkout and no supermarket prices — take this to the shop yourself.',
                       style: TextStyle(color: kMuted, height: 1.4),
                     ),
                     const SizedBox(height: 16),

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../api/api.dart';
+import '../domain/method.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../widgets.dart';
@@ -185,7 +186,24 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   Widget build(BuildContext context) {
     final r = recipe;
     return Scaffold(
-      appBar: AppBar(title: Text(r?['title'] as String? ?? 'Recipe')),
+      appBar: AppBar(
+        title: Text(r?['title'] as String? ?? 'Recipe'),
+        actions: [
+          if (r?['mine'] == true)
+            IconButton(
+              tooltip: 'Edit',
+              onPressed: () async {
+                await Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => RecipeEditScreen(session: widget.session, recipe: r),
+                  ),
+                );
+                await _load();
+              },
+              icon: const Icon(Icons.edit_outlined),
+            ),
+        ],
+      ),
       body: r == null
           ? Center(child: error == null ? const CircularProgressIndicator() : Text(error!))
           : ListView(
@@ -209,7 +227,8 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
                   ),
                 const SizedBox(height: 8),
                 const Text('Method', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen)),
-                Text(r['method'] as String? ?? ''),
+                const SizedBox(height: 8),
+                MethodStepsList.fromRecipe(r),
                 const SizedBox(height: 20),
                 FilledButton(onPressed: _addToWeek, child: const Text('Add to this week')),
                 const SizedBox(height: 8),
@@ -242,69 +261,117 @@ extension on String {
   String get sliceDate => length >= 10 ? substring(0, 10) : this;
 }
 
+const ingredientUnits = ['g', 'kg', 'ml', 'l', 'tbsp', 'tsp', 'each'];
+
+class _IngredientDraft {
+  _IngredientDraft({String name = '', String quantity = '', this.unit = 'g'})
+      : name = TextEditingController(text: name),
+        quantity = TextEditingController(text: quantity);
+
+  final TextEditingController name;
+  final TextEditingController quantity;
+  String unit;
+
+  void dispose() {
+    name.dispose();
+    quantity.dispose();
+  }
+}
+
 class RecipeEditScreen extends StatefulWidget {
-  const RecipeEditScreen({super.key, required this.session});
+  const RecipeEditScreen({super.key, required this.session, this.recipe});
   final Session session;
+  final Map<String, dynamic>? recipe;
 
   @override
   State<RecipeEditScreen> createState() => _RecipeEditScreenState();
 }
 
 class _RecipeEditScreenState extends State<RecipeEditScreen> {
-  final title = TextEditingController();
-  final summary = TextEditingController();
-  final method = TextEditingController();
-  final serves = TextEditingController(text: '2');
-  final ingredients = TextEditingController(
-    text: '400g chicken breast\n200g rice\n1 tbsp olive oil',
-  );
-  bool publish = true;
-  bool exclusive = false;
+  late final title = TextEditingController(text: widget.recipe?['title'] as String? ?? '');
+  late final summary = TextEditingController(text: widget.recipe?['summary'] as String? ?? '');
+  late final serves = TextEditingController(text: '${widget.recipe?['serves'] ?? 2}');
+  late final ingredients = <_IngredientDraft>[];
+  late final steps = <TextEditingController>[];
+  late bool publish = widget.recipe?['published'] != false;
+  late bool exclusive = widget.recipe?['exclusive'] == true;
   bool busy = false;
+
+  bool get editing => widget.recipe?['id'] != null;
+
+  @override
+  void initState() {
+    super.initState();
+    final existingIngs = (widget.recipe?['ingredients'] as List? ?? []).cast<Map<String, dynamic>>();
+    if (existingIngs.isEmpty) {
+      ingredients.add(_IngredientDraft());
+    } else {
+      for (final ing in existingIngs) {
+        final qty = ing['quantity'];
+        ingredients.add(_IngredientDraft(
+          name: ing['name'] as String? ?? '',
+          quantity: qty == null ? '' : '$qty',
+          unit: (ing['unit'] as String?)?.isNotEmpty == true ? ing['unit'] as String : 'g',
+        ));
+      }
+    }
+    final existingSteps = stepsFromRecipe(widget.recipe ?? {});
+    if (existingSteps.isEmpty) {
+      steps.add(TextEditingController());
+    } else {
+      for (final step in existingSteps) {
+        steps.add(TextEditingController(text: step));
+      }
+    }
+  }
 
   @override
   void dispose() {
     title.dispose();
     summary.dispose();
-    method.dispose();
     serves.dispose();
-    ingredients.dispose();
+    for (final ing in ingredients) {
+      ing.dispose();
+    }
+    for (final step in steps) {
+      step.dispose();
+    }
     super.dispose();
   }
 
-  List<Map<String, dynamic>> _parseIngs() {
+  List<Map<String, dynamic>> _collectIngredients() {
     final out = <Map<String, dynamic>>[];
-    final re = RegExp(
-      r'^\s*(\d+(?:\.\d+)?)\s*(kg|g|ml|l|tbsp|tsp|x)?\s+(.+)$',
-      caseSensitive: false,
-    );
-    for (final line in ingredients.text.split('\n')) {
-      final m = re.firstMatch(line.trim());
-      if (m != null) {
-        out.add({
-          'name': m.group(3),
-          'quantity': num.parse(m.group(1)!),
-          'unit': (m.group(2) ?? 'each').toLowerCase(),
-        });
-      } else if (line.trim().isNotEmpty) {
-        out.add({'name': line.trim(), 'quantity': null, 'unit': 'each'});
-      }
+    for (final ing in ingredients) {
+      final name = ing.name.text.trim();
+      if (name.isEmpty) continue;
+      final qty = num.tryParse(ing.quantity.text.trim());
+      out.add({'name': name, 'quantity': qty, 'unit': ing.unit});
     }
     return out;
   }
 
+  List<String> _collectSteps() =>
+      steps.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+
   Future<void> _save() async {
     setState(() => busy = true);
     try {
-      await widget.session.api.createRecipe({
+      final methodSteps = _collectSteps();
+      final body = {
         'title': title.text.trim(),
         'summary': summary.text.trim(),
-        'method': method.text.trim(),
+        'method': methodSteps.join('\n'),
+        'method_steps': methodSteps,
         'serves': int.tryParse(serves.text) ?? 2,
         'published': publish,
         'exclusive': exclusive,
-        'ingredients': _parseIngs(),
-      });
+        'ingredients': _collectIngredients(),
+      };
+      if (editing) {
+        await widget.session.api.updateRecipe(widget.recipe!['id'] as String, body);
+      } else {
+        await widget.session.api.createRecipe(body);
+      }
       if (mounted) Navigator.pop(context);
     } catch (e) {
       if (mounted) showMessage(context, e.toString());
@@ -315,7 +382,7 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('New recipe')),
+      appBar: AppBar(title: Text(editing ? 'Edit recipe' : 'New recipe')),
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
@@ -324,15 +391,120 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
           TextField(controller: summary, decoration: const InputDecoration(labelText: 'Summary')),
           const SizedBox(height: 8),
           TextField(controller: serves, decoration: const InputDecoration(labelText: 'Serves'), keyboardType: TextInputType.number),
+          const SizedBox(height: 16),
+          const Text('Ingredients', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('One field per ingredient — not a blob of text.', style: TextStyle(color: kMuted)),
           const SizedBox(height: 8),
-          TextField(
-            controller: ingredients,
-            minLines: 4,
-            maxLines: 8,
-            decoration: const InputDecoration(labelText: 'Ingredients (one per line, e.g. 400g chicken breast)'),
+          for (var i = 0; i < ingredients.length; i++)
+            Card(
+              key: ObjectKey(ingredients[i]),
+              margin: const EdgeInsets.only(bottom: 8),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(12, 8, 4, 12),
+                child: Column(
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: ingredients[i].name,
+                            decoration: const InputDecoration(labelText: 'Ingredient'),
+                          ),
+                        ),
+                        IconButton(
+                          tooltip: 'Remove ingredient',
+                          onPressed: ingredients.length <= 1
+                              ? null
+                              : () => setState(() {
+                                    final removed = ingredients.removeAt(i);
+                                    removed.dispose();
+                                  }),
+                          icon: const Icon(Icons.remove_circle_outline),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: ingredients[i].quantity,
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            decoration: const InputDecoration(labelText: 'Quantity'),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<String>(
+                            initialValue: ingredientUnits.contains(ingredients[i].unit) ? ingredients[i].unit : 'each',
+                            items: [
+                              for (final u in ingredientUnits) DropdownMenuItem(value: u, child: Text(u)),
+                            ],
+                            onChanged: (v) => setState(() => ingredients[i].unit = v ?? 'g'),
+                            decoration: const InputDecoration(labelText: 'Unit'),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => ingredients.add(_IngredientDraft())),
+              icon: const Icon(Icons.add),
+              label: const Text('Add ingredient'),
+            ),
           ),
+          const SizedBox(height: 12),
+          const Text('Method', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 16)),
+          const SizedBox(height: 4),
+          const Text('One step per line. We keep them numbered.', style: TextStyle(color: kMuted)),
           const SizedBox(height: 8),
-          TextField(controller: method, minLines: 4, maxLines: 8, decoration: const InputDecoration(labelText: 'Method')),
+          for (var i = 0; i < steps.length; i++)
+            Padding(
+              key: ObjectKey(steps[i]),
+              padding: const EdgeInsets.only(bottom: 8),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Padding(
+                    padding: const EdgeInsets.only(top: 16),
+                    child: Text('${i + 1}.', style: const TextStyle(fontWeight: FontWeight.w700, color: kGreen)),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextField(
+                      controller: steps[i],
+                      minLines: 1,
+                      maxLines: 4,
+                      decoration: InputDecoration(labelText: 'Step ${i + 1}'),
+                    ),
+                  ),
+                  IconButton(
+                    tooltip: 'Remove step',
+                    onPressed: steps.length <= 1
+                        ? null
+                        : () => setState(() {
+                              final removed = steps.removeAt(i);
+                              removed.dispose();
+                            }),
+                    icon: const Icon(Icons.remove_circle_outline),
+                  ),
+                ],
+              ),
+            ),
+          Align(
+            alignment: Alignment.centerLeft,
+            child: TextButton.icon(
+              onPressed: () => setState(() => steps.add(TextEditingController())),
+              icon: const Icon(Icons.add),
+              label: const Text('Add step'),
+            ),
+          ),
           SwitchListTile(
             title: const Text('Publish so others can browse it'),
             value: publish,
