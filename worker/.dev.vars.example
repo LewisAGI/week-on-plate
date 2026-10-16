@@ -1,0 +1,6 @@
+# Copy to .dev.vars (gitignored). `wrangler dev` loads it.
+# Production: npx wrangler secret put DEMO_CREATOR_PASSWORD
+#             npx wrangler secret put DEMO_BUYER_PASSWORD
+# Choose your own values. Do not reuse passwords from git history.
+DEMO_CREATOR_PASSWORD=
+DEMO_BUYER_PASSWORD=
