@@ -59,15 +59,29 @@ async function bumpLoginBucket(env, key, limit, now) {
 }
 
 export function clientIp(request) {
-  const forwarded = request.headers.get("CF-Connecting-IP") || request.headers.get("X-Forwarded-For") || "";
-  return forwarded.split(",")[0].trim() || "unknown";
+  const ip = (request.headers.get("CF-Connecting-IP") || "").trim();
+  return ip || "unknown";
+}
+
+async function pruneExpiredLoginAttempts(env, now, keepKeys) {
+  const holders = keepKeys.map(() => "?").join(", ");
+  await env.DB.prepare(
+    `DELETE FROM login_attempts WHERE reset_at <= ? AND bucket_key NOT IN (${holders})`,
+  )
+    .bind(now, ...keepKeys)
+    .run();
 }
 
 export async function isLoginRateLimited(request, email, env) {
   const limit = Number(env?.LOGIN_ATTEMPT_LIMIT) || DEFAULT_LOGIN_ATTEMPT_LIMIT;
   const now = Date.now();
-  const ipLimited = await bumpLoginBucket(env, `ip:${clientIp(request)}`, limit, now);
-  const emailLimited = email ? await bumpLoginBucket(env, `email:${email}`, limit, now) : false;
+  const ip = clientIp(request);
+  const ipKey = `ip:${ip}`;
+  // Per email and IP, so one client cannot lock a shared demo account for everyone else.
+  const emailKey = email ? `email:${email}|ip:${ip}` : "";
+  await pruneExpiredLoginAttempts(env, now, emailKey ? [ipKey, emailKey] : [ipKey]);
+  const ipLimited = await bumpLoginBucket(env, ipKey, limit, now);
+  const emailLimited = emailKey ? await bumpLoginBucket(env, emailKey, limit, now) : false;
   return ipLimited || emailLimited;
 }
 

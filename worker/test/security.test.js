@@ -283,12 +283,15 @@ describe("adversarial fixes", { concurrency: false }, () => {
     assert.ok(!JSON.stringify(data).includes("secret-leak-xyz"));
   });
 
-  async function loginAttempt(target, { ip, email, password = "wrong-password-xx" } = {}) {
+  async function loginAttempt(target, { ip, forwardedFor, email, password = "wrong-password-xx" } = {}) {
+    const headers = {};
+    if (ip) headers["CF-Connecting-IP"] = ip;
+    if (forwardedFor) headers["X-Forwarded-For"] = forwardedFor;
     return jsonOf(
       await worker.fetch(
         req("/api/auth/login", {
           method: "POST",
-          headers: ip ? { "CF-Connecting-IP": ip } : {},
+          headers,
           body: { email, password },
         }),
         target,
@@ -308,22 +311,27 @@ describe("adversarial fixes", { concurrency: false }, () => {
     const stored = await env.DB.prepare(
       "SELECT attempt_count FROM login_attempts WHERE bucket_key = ?",
     )
-      .bind("email:nobody@weekonplate.demo")
+      .bind("email:nobody@weekonplate.demo|ip:203.0.113.9")
       .first();
     assert.equal(Number(stored.attempt_count), 4);
     await resetLoginRateLimit(env);
   });
 
-  it("rate-limits the same email across IP addresses", async () => {
-    const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 2 });
-    const email = "shared@weekonplate.demo";
-    const first = await loginAttempt(tight, { ip: "203.0.113.10", email });
-    const second = await loginAttempt(tight, { ip: "203.0.113.11", email });
-    const third = await loginAttempt(tight, { ip: "203.0.113.12", email });
+  it("lets another IP sign in to a demo account after bad attempts elsewhere", async () => {
+    const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 1 });
+    const creator = demoAccounts(tight).creator;
+    const first = await loginAttempt(tight, { ip: "203.0.113.50", email: creator.email });
+    const locked = await loginAttempt(tight, { ip: "203.0.113.50", email: creator.email });
+    const other = await loginAttempt(tight, {
+      ip: "203.0.113.51",
+      email: creator.email,
+      password: creator.password,
+    });
     assert.equal(first.res.status, 401);
-    assert.equal(second.res.status, 401);
-    assert.equal(third.res.status, 429);
-    assert.equal(third.data.error, "rate_limited");
+    assert.equal(locked.res.status, 429);
+    assert.equal(locked.data.error, "rate_limited");
+    assert.equal(other.res.status, 200);
+    assert.equal(other.data.user.email, creator.email);
   });
 
   it("rate-limits one IP address across email addresses", async () => {
@@ -338,23 +346,65 @@ describe("adversarial fixes", { concurrency: false }, () => {
     assert.equal(third.data.error, "rate_limited");
   });
 
-  it("opens a new D1 window after the stored reset time", async () => {
+  it("refreshes an expired login window and prunes other expired rows", async () => {
     const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 1 });
     const email = "window@weekonplate.demo";
     const ip = "203.0.113.30";
-    const first = await loginAttempt(tight, { ip, email });
-    const blocked = await loginAttempt(tight, { ip, email });
-    assert.equal(first.res.status, 401);
-    assert.equal(blocked.res.status, 429);
-    await tight.DB.prepare("UPDATE login_attempts SET reset_at = 0").run();
+    const emailKey = `email:${email}|ip:${ip}`;
+    const now = Date.now();
+    await tight.DB.prepare(
+      "INSERT INTO login_attempts (bucket_key, attempt_count, reset_at) VALUES (?, ?, ?)",
+    )
+      .bind(emailKey, 9, now - 1000)
+      .run();
+    await tight.DB.prepare(
+      "INSERT INTO login_attempts (bucket_key, attempt_count, reset_at) VALUES (?, ?, ?)",
+    )
+      .bind("email:stale@weekonplate.demo|ip:198.51.100.8", 4, now - 1000)
+      .run();
+    await tight.DB.prepare(
+      "INSERT INTO login_attempts (bucket_key, attempt_count, reset_at) VALUES (?, ?, ?)",
+    )
+      .bind("ip:198.51.100.9", 2, now + 60_000)
+      .run();
+
     const again = await loginAttempt(tight, { ip, email });
     assert.equal(again.res.status, 401);
+
     const row = await tight.DB.prepare(
-      "SELECT attempt_count FROM login_attempts WHERE bucket_key = ?",
+      "SELECT attempt_count, reset_at FROM login_attempts WHERE bucket_key = ?",
     )
-      .bind(`email:${email}`)
+      .bind(emailKey)
       .first();
     assert.equal(Number(row.attempt_count), 1);
+    assert.ok(Number(row.reset_at) >= now + 10 * 60 * 1000 - 5000);
+
+    const stale = await tight.DB.prepare("SELECT bucket_key FROM login_attempts WHERE bucket_key = ?")
+      .bind("email:stale@weekonplate.demo|ip:198.51.100.8")
+      .first();
+    assert.equal(stale, null);
+
+    const live = await tight.DB.prepare("SELECT attempt_count FROM login_attempts WHERE bucket_key = ?")
+      .bind("ip:198.51.100.9")
+      .first();
+    assert.equal(Number(live.attempt_count), 2);
+  });
+
+  it("counts the IP bucket from CF-Connecting-IP and ignores X-Forwarded-For", async () => {
+    const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 1 });
+    const first = await loginAttempt(tight, {
+      ip: "203.0.113.60",
+      forwardedFor: "198.51.100.60",
+      email: "xff-a@weekonplate.demo",
+    });
+    const second = await loginAttempt(tight, {
+      ip: "203.0.113.60",
+      forwardedFor: "198.51.100.61",
+      email: "xff-b@weekonplate.demo",
+    });
+    assert.equal(first.res.status, 401);
+    assert.equal(second.res.status, 429);
+    assert.equal(second.data.error, "rate_limited");
   });
 
   it("does not share login rate limits across databases", async () => {
