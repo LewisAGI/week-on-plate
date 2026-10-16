@@ -297,7 +297,11 @@ class _AddGroceryDialogState extends State<_AddGroceryDialog> {
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancel')),
+        IconTip(
+          message: 'Cancel',
+          onPressed: () => Navigator.pop(context),
+          icon: const Icon(Icons.close, color: kMuted),
+        ),
         FilledButton(
           onPressed: () {
             final trimmed = name.text.trim();

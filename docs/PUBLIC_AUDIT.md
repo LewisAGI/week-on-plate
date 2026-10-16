@@ -71,3 +71,5 @@ The literal password and database id are intentionally not repeated in this file
 After the HEAD cleanup, `gitleaks detect --no-git` on the working tree reported **0 findings**.
 
 `gitleaks detect --log-opts="--all"` still reports the buyer fixture password (rule `generic-api-key`) in `worker/src/auth.js` at `de6ac03` and `e07eb3d`. That is the history copy of finding 1. This change does not rewrite those commits. The creator fixture password sits in the same historical files and was removed from HEAD with it.
+
+CI runs the same gitleaks 8.28.0 on `origin/main..HEAD` and on the working tree (`--no-git`). It does not pass `--all`, because that scan still reports finding 1 and history is not rewritten. A green gitleaks job means the new commits and the tree are clean. It does not clear this verdict.

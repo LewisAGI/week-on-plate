@@ -128,6 +128,10 @@ const PACK = [
 
 const syncedFixturePasswords = new Set();
 
+export function resetFixturePasswordSync() {
+  syncedFixturePasswords.clear();
+}
+
 async function syncFixturePassword(env, account) {
   if (!account.password || syncedFixturePasswords.has(account.id)) return;
   syncedFixturePasswords.add(account.id);

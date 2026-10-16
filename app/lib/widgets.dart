@@ -179,7 +179,7 @@ class _FoodPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    final bg = Paint()..color = hash.isEven ? kGreenSoft : const Color(0xFFE7F2EB);
+    final bg = Paint()..color = kGreenSoft;
     canvas.drawRect(Offset.zero & size, bg);
     final plate = Paint()..color = kWhite;
     final cx = size.width * 0.5;
@@ -196,7 +196,7 @@ class _FoodPainter extends CustomPainter {
       ),
       food,
     );
-    final accent = Paint()..color = const Color(0xFF8FBF9F);
+    final accent = Paint()..color = kGreen;
     canvas.drawCircle(Offset(cx + size.width * 0.16, cy - size.height * 0.04), size.width * 0.09, accent);
     canvas.drawCircle(Offset(cx + size.width * 0.02, cy + size.height * 0.08), size.width * 0.06, Paint()..color = kGreenDark);
   }
@@ -522,7 +522,7 @@ class ServingsStepper extends StatelessWidget {
           alignment: Alignment.center,
           padding: const EdgeInsets.symmetric(vertical: 6),
           decoration: BoxDecoration(
-            color: const Color(0xFFF4F4F4),
+            color: kGreenSoft,
             borderRadius: BorderRadius.circular(8),
           ),
           child: Text('$value', style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
@@ -627,7 +627,7 @@ class SlotPickerSheet extends StatelessWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           const SizedBox(height: 12),
-          const Text('Which sitting?', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+          const Text('Sitting', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
           for (final slot in slotOrder)
             ListTile(
               leading: Icon(slotIcon(slot), color: kGreen),

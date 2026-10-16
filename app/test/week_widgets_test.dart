@@ -122,6 +122,19 @@ void main() {
     expect(find.text('Step 2'), findsOneWidget);
   });
 
+  testWidgets('sitting sheet is a title, not a prompt', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: weekOnPlateTheme(),
+        home: const Scaffold(body: SlotPickerSheet()),
+      ),
+    );
+    expect(find.text('Sitting'), findsOneWidget);
+    expect(find.text('Which sitting?'), findsNothing);
+    expect(find.text('Breakfast'), findsOneWidget);
+    expect(find.text('Dinner'), findsOneWidget);
+  });
+
   testWidgets('bottom nav says Groceries not Shop', (tester) async {
     await tester.pumpWidget(
       MaterialApp(
