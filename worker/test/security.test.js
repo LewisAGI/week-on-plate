@@ -45,7 +45,7 @@ describe("adversarial fixes", { concurrency: false }, () => {
   let buyerToken;
 
   before(async () => {
-    resetLoginRateLimit();
+    await resetLoginRateLimit(env);
     const health = await jsonOf(await worker.fetch(req("/api/health"), env));
     assert.equal(health.res.status, 200);
     const accounts = demoAccounts(env);
@@ -283,24 +283,93 @@ describe("adversarial fixes", { concurrency: false }, () => {
     assert.ok(!JSON.stringify(data).includes("secret-leak-xyz"));
   });
 
+  async function loginAttempt(target, { ip, email, password = "wrong-password-xx" } = {}) {
+    return jsonOf(
+      await worker.fetch(
+        req("/api/auth/login", {
+          method: "POST",
+          headers: ip ? { "CF-Connecting-IP": ip } : {},
+          body: { email, password },
+        }),
+        target,
+      ),
+    );
+  }
+
   it("rate-limits login attempts with 429", async () => {
-    resetLoginRateLimit();
+    await resetLoginRateLimit(env);
     const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 3, DB: env.DB });
     let last;
     for (let i = 0; i < 4; i += 1) {
-      last = await jsonOf(
-        await worker.fetch(
-          req("/api/auth/login", {
-            method: "POST",
-            headers: { "CF-Connecting-IP": "203.0.113.9" },
-            body: { email: "nobody@weekonplate.demo", password: "wrong-password-xx" },
-          }),
-          tight,
-        ),
-      );
+      last = await loginAttempt(tight, { ip: "203.0.113.9", email: "nobody@weekonplate.demo" });
     }
     assert.equal(last.res.status, 429);
     assert.equal(last.data.error, "rate_limited");
-    resetLoginRateLimit();
+    const stored = await env.DB.prepare(
+      "SELECT attempt_count FROM login_attempts WHERE bucket_key = ?",
+    )
+      .bind("email:nobody@weekonplate.demo")
+      .first();
+    assert.equal(Number(stored.attempt_count), 4);
+    await resetLoginRateLimit(env);
+  });
+
+  it("rate-limits the same email across IP addresses", async () => {
+    const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 2 });
+    const email = "shared@weekonplate.demo";
+    const first = await loginAttempt(tight, { ip: "203.0.113.10", email });
+    const second = await loginAttempt(tight, { ip: "203.0.113.11", email });
+    const third = await loginAttempt(tight, { ip: "203.0.113.12", email });
+    assert.equal(first.res.status, 401);
+    assert.equal(second.res.status, 401);
+    assert.equal(third.res.status, 429);
+    assert.equal(third.data.error, "rate_limited");
+  });
+
+  it("rate-limits one IP address across email addresses", async () => {
+    const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 2 });
+    const ip = "203.0.113.20";
+    const first = await loginAttempt(tight, { ip, email: "one@weekonplate.demo" });
+    const second = await loginAttempt(tight, { ip, email: "two@weekonplate.demo" });
+    const third = await loginAttempt(tight, { ip, email: "three@weekonplate.demo" });
+    assert.equal(first.res.status, 401);
+    assert.equal(second.res.status, 401);
+    assert.equal(third.res.status, 429);
+    assert.equal(third.data.error, "rate_limited");
+  });
+
+  it("opens a new D1 window after the stored reset time", async () => {
+    const tight = testEnv({ LOGIN_ATTEMPT_LIMIT: 1 });
+    const email = "window@weekonplate.demo";
+    const ip = "203.0.113.30";
+    const first = await loginAttempt(tight, { ip, email });
+    const blocked = await loginAttempt(tight, { ip, email });
+    assert.equal(first.res.status, 401);
+    assert.equal(blocked.res.status, 429);
+    await tight.DB.prepare("UPDATE login_attempts SET reset_at = 0").run();
+    const again = await loginAttempt(tight, { ip, email });
+    assert.equal(again.res.status, 401);
+    const row = await tight.DB.prepare(
+      "SELECT attempt_count FROM login_attempts WHERE bucket_key = ?",
+    )
+      .bind(`email:${email}`)
+      .first();
+    assert.equal(Number(row.attempt_count), 1);
+  });
+
+  it("does not share login rate limits across databases", async () => {
+    const firstEnv = testEnv({ LOGIN_ATTEMPT_LIMIT: 1 });
+    const secondEnv = testEnv({ LOGIN_ATTEMPT_LIMIT: 1 });
+    const email = "isolated@weekonplate.demo";
+    const opened = await loginAttempt(firstEnv, { ip: "203.0.113.40", email });
+    const blocked = await loginAttempt(firstEnv, { ip: "203.0.113.40", email });
+    const other = await loginAttempt(secondEnv, { ip: "203.0.113.40", email });
+    assert.equal(opened.res.status, 401);
+    assert.equal(blocked.res.status, 429);
+    assert.equal(other.res.status, 401);
+    const leaked = await secondEnv.DB.prepare("SELECT COUNT(*) AS n FROM login_attempts").first();
+    const local = await firstEnv.DB.prepare("SELECT COUNT(*) AS n FROM login_attempts").first();
+    assert.equal(Number(leaked.n), 2);
+    assert.equal(Number(local.n), 2);
   });
 });

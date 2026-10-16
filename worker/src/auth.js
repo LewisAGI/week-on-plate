@@ -6,8 +6,6 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const LOGIN_WINDOW_MS = 10 * 60 * 1000;
 const DEFAULT_LOGIN_ATTEMPT_LIMIT = 8;
 
-const loginBuckets = new Map();
-
 export const DEMO_FIXTURES = {
   creator: {
     id: "usr_demo_creator",
@@ -33,18 +31,31 @@ export function demoAccounts(env = {}) {
   };
 }
 
-export function resetLoginRateLimit() {
-  loginBuckets.clear();
+// D1, not Worker memory: counters have to survive across isolates.
+// The Workers Rate Limiting binding only allows a 10s or 60s period, shorter than this window.
+export async function resetLoginRateLimit(env) {
+  if (!env?.DB) return;
+  await env.DB.prepare("DELETE FROM login_attempts").run();
 }
 
-function bumpLoginBucket(key, limit, now) {
-  const entry = loginBuckets.get(key);
-  if (!entry || entry.resetAt <= now) {
-    loginBuckets.set(key, { count: 1, resetAt: now + LOGIN_WINDOW_MS });
-    return false;
-  }
-  entry.count += 1;
-  return entry.count > limit;
+async function bumpLoginBucket(env, key, limit, now) {
+  const row = await env.DB.prepare(
+    `INSERT INTO login_attempts (bucket_key, attempt_count, reset_at)
+     VALUES (?, 1, ?)
+     ON CONFLICT(bucket_key) DO UPDATE SET
+       attempt_count = CASE
+         WHEN login_attempts.reset_at <= ? THEN 1
+         ELSE login_attempts.attempt_count + 1
+       END,
+       reset_at = CASE
+         WHEN login_attempts.reset_at <= ? THEN excluded.reset_at
+         ELSE login_attempts.reset_at
+       END
+     RETURNING attempt_count`,
+  )
+    .bind(key, now + LOGIN_WINDOW_MS, now, now)
+    .first();
+  return Number(row?.attempt_count) > limit;
 }
 
 export function clientIp(request) {
@@ -52,11 +63,11 @@ export function clientIp(request) {
   return forwarded.split(",")[0].trim() || "unknown";
 }
 
-export function isLoginRateLimited(request, email, env) {
+export async function isLoginRateLimited(request, email, env) {
   const limit = Number(env?.LOGIN_ATTEMPT_LIMIT) || DEFAULT_LOGIN_ATTEMPT_LIMIT;
   const now = Date.now();
-  const ipLimited = bumpLoginBucket(`ip:${clientIp(request)}`, limit, now);
-  const emailLimited = email ? bumpLoginBucket(`email:${email}`, limit, now) : false;
+  const ipLimited = await bumpLoginBucket(env, `ip:${clientIp(request)}`, limit, now);
+  const emailLimited = email ? await bumpLoginBucket(env, `email:${email}`, limit, now) : false;
   return ipLimited || emailLimited;
 }
 
@@ -180,7 +191,7 @@ export async function handleLogin(request, env) {
   if (!EMAIL_RE.test(email) || !password) {
     return apiError(400, "bad_credentials_format", "An email address and a password are both needed.");
   }
-  if (isLoginRateLimited(request, email, env)) {
+  if (await isLoginRateLimited(request, email, env)) {
     return apiError(429, "rate_limited", "Too many sign-in attempts. Try again in a few minutes.");
   }
   const user = await env.DB.prepare("SELECT * FROM users WHERE email = ?").bind(email).first();
