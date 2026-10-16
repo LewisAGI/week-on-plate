@@ -3,7 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 
-const defaultApiBase = 'https://week-on-plate.lewismgodfrey.workers.dev';
+const defaultApiBase = 'http://127.0.0.1:8787';
 
 class ApiException implements Exception {
   ApiException(this.message);

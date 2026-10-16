@@ -1,43 +1,45 @@
 # WeekOnPlate
 
-Working title (Lewis may rename). Creator-led meal OS: close the gap between a saved reel and actually cooking this week.
+Creator-led meal OS: close the gap between a saved reel and actually cooking this week. Working title — Lewis may rename.
 
 Gym- and macro-friendly without being gym-branded. White background, green type and accents. British English.
 
-Monorepo:
+v1 is a **self-hosted** Flutter app plus a Cloudflare Worker. There is no App Store or Play Store listing.
 
-- `/app` — Flutter (iOS Simulator first; Android-capable)
-- `/worker` — Cloudflare Worker + D1
+## Features
 
-Live API (when deployed): `https://week-on-plate.lewismgodfrey.workers.dev`
+- **This week** — one scrolling list, a day at a time, with meals, macros, and a mini fullness grid.
+- **Recipes** — browse, save, write, and import a caption into a confirmable draft. House recipes and creator packs.
+- **Groceries** — a shopping list from the week, minus the cupboard. No checkout and no supermarket prices.
+- **Cupboard** — cold-start staples, add what you already own, or scan a paper list.
+- **Household scale** — recipes scale to the number of people at the table. The default is two adults.
 
-## Demonstration accounts
+## Clone here — not Documents/Grok
 
-Published fixture passwords, same idea as position-manager. Seeded on migrate / first request.
-
-| | Email | Password | Role |
-| --- | --- | --- | --- |
-| **A** | `creator@weekonplate.demo` | `WeekOnPlate-Creator-26` | Creator — publish recipes and packs |
-| **B** | `buyer@weekonplate.demo` | `WeekOnPlate-Buyer-26` | Browse, save, plan, cupboard, stub-buy |
-
-These are demonstration logins. Do not reuse them anywhere real.
-
-The API stores `role` on each user. Buyers may create and publish ordinary recipes. Only creators may set `exclusive: true` or `POST /api/packs` — buyers receive `403`. Attaching a recipe to a pack does not flip its exclusivity; creators choose that when they write the recipe.
-
-CORS allowlists the workers.dev host and localhost / emulator origins. Arbitrary origins are not reflected when credentials are on. The Flutter app should send a Bearer token.
-
-## How Lewis runs the Flutter app on the iOS Simulator
-
-On a Mac with Xcode and the Flutter SDK (`flutter doctor` should show a connected Simulator):
+Put the project on the local disk:
 
 ```bash
-cd app
+mkdir -p ~/Developer
+git clone https://github.com/LewisAGI/week-on-plate.git ~/Developer/week-on-plate
+cd ~/Developer/week-on-plate
+```
+
+**Do not** clone into `~/Documents/Grok` (or any iCloud Desktop & Documents folder). The iCloud File Provider breaks iOS codesign when Xcode / Flutter writes build products under iCloud.
+
+Expected local toolchain: **Flutter 3.47**, **Xcode** (iOS), and **Node 22** for the Worker.
+
+## Run on iPhone (Mac)
+
+On a Mac with Xcode and the Flutter SDK (`flutter doctor` should show a connected iPhone or Simulator):
+
+```bash
+cd ~/Developer/week-on-plate/app
 flutter pub get
+```
 
-# Default: talk to the deployed Worker
-flutter run
+Start the Worker first (below), then:
 
-# Or point at local wrangler (http://127.0.0.1:8787)
+```bash
 flutter run --dart-define=API_BASE=http://127.0.0.1:8787
 ```
 
@@ -46,29 +48,38 @@ Pick an iPhone simulator when prompted, or:
 ```bash
 open -a Simulator
 flutter devices
-flutter run -d "iPhone 16"
+flutter run -d "iPhone 16" --dart-define=API_BASE=http://127.0.0.1:8787
 ```
 
-The login screen can fill account A or B. After sign-in you get Week, Recipes, Groceries, Cupboard, More.
+The app talks to `http://127.0.0.1:8787` unless you pass `API_BASE`.
 
-### Point the app at a Worker
+First-run on a physical iPhone: open `app/ios/Runner.xcworkspace` in Xcode and pick a development team. The iOS Simulator does not need a team.
 
-| Target | `API_BASE` |
-| --- | --- |
-| Deployed | `https://week-on-plate.lewismgodfrey.workers.dev` (this is the app default) |
-| Local wrangler | `http://127.0.0.1:8787` |
+Fill the demonstration emails from the login screen. Passwords are the ones you set on the Worker (see below), passed through when you want the fill buttons to type them:
 
 ```bash
-flutter run --dart-define=API_BASE=https://week-on-plate.lewismgodfrey.workers.dev
+flutter run \
+  --dart-define=API_BASE=http://127.0.0.1:8787 \
+  --dart-define=DEMO_CREATOR_PASSWORD='your-creator-password' \
+  --dart-define=DEMO_BUYER_PASSWORD='your-buyer-password'
 ```
 
-Android is kept capable (`flutter run` on an emulator or device). For the Android emulator, localhost is `http://10.0.2.2:8787`. App Store / Play listing are out of scope.
+Android stays capable (`flutter run` on an emulator or device). For the Android emulator, the host machine is `http://10.0.2.2:8787`.
 
-## Worker: local and deploy
+## Worker — local
 
 ```bash
-cd worker
+cd ~/Developer/week-on-plate/worker
 npm install
+cp .dev.vars.example .dev.vars
+```
+
+Edit `.dev.vars` and set `DEMO_CREATOR_PASSWORD` and `DEMO_BUYER_PASSWORD` (12 characters or more). That file is gitignored.
+
+Create your own D1 database and paste the id into `worker/wrangler.jsonc` in place of the placeholder `00000000-0000-0000-0000-000000000000`. Do not commit a production id.
+
+```bash
+npx wrangler d1 create week-on-plate-db
 npx wrangler d1 migrations apply week-on-plate-db --local
 npx wrangler dev
 ```
@@ -79,46 +90,55 @@ Health:
 curl -sS http://127.0.0.1:8787/api/health
 ```
 
-### Deploy notes (Worker + D1)
+On first boot the Worker writes five public house recipes, a creator pack (**Weeknight plates**, £9 stub), and the two demonstration accounts — only if those passwords are set.
 
-D1 database `week-on-plate-db` (id `b27e2cb2-a847-41ed-96ff-edae9b59acbc`) is already created on the Lewis Cloudflare account.
+| | Email | Role |
+| --- | --- | --- |
+| **A** | `creator@weekonplate.demo` | Creator — publish recipes and packs |
+| **B** | `buyer@weekonplate.demo` | Browse, save, plan, cupboard, stub-buy |
+
+Buyers may create and publish ordinary recipes. Only creators may set `exclusive: true` or `POST /api/packs`.
+
+## Self-host
 
 ```bash
 cd worker
+npx wrangler secret put DEMO_CREATOR_PASSWORD
+npx wrangler secret put DEMO_BUYER_PASSWORD
 npx wrangler d1 migrations apply week-on-plate-db --remote
 npx wrangler deploy
 ```
 
-Expected workers.dev host: `https://week-on-plate.lewismgodfrey.workers.dev`
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID` stay in the environment. They are not written into the repo. Wrangler reads them from the shell.
+
+Point the app at your Worker:
+
+```bash
+cd app
+flutter run --dart-define=API_BASE=https://<your-worker>.workers.dev
+```
 
 GitHub Actions (`.github/workflows/ci.yml`) runs Worker tests, `flutter analyze`, and `flutter test`. On push to `main` it deploys when these secrets exist on the repo or org:
 
 - `CF_API_TOKEN` — mapped to Wrangler as `CLOUDFLARE_API_TOKEN`
 - `CLOUDFLARE_ACCOUNT_ID`
+- `CLOUDFLARE_D1_DATABASE_ID` — substituted into `wrangler.jsonc` during the job, not committed
 
-If those secrets are missing, CI still goes green and skips deploy. The Worker remains wrangler-ready.
+If any of those are missing, CI still goes green and skips deploy.
 
-Workers AI is bound as `AI`. Import prefers a cheap Llama extract and always falls back to a deterministic caption parser, so the MVP works without an LLM key.
+Workers AI is bound as `AI`. Import prefers a cheap Llama extract and always falls back to a deterministic caption parser, so the app works without an LLM key.
 
-## Seeded house recipes and a pack
+CORS allows the Worker’s own origin plus localhost and the Android emulator host. Arbitrary origins are not reflected when credentials are on. The Flutter app sends a Bearer token.
 
-On first boot the Worker writes:
-
-- Five public house recipes (lemon chicken, overnight oats, chickpea stew, salmon and rice, turkey chilli)
-- A creator pack, **Weeknight plates** (£9 stub): miso salmon traybake + cottage cheese pancakes (exclusive until purchased)
-
-Household default: **2 adults**, 0 under-18s. The household screen keeps the teen note light: consider teenage eating habits, and count teens as adults if that is your house.
-
-## Smoke path (A then B)
+## Smoke path
 
 1. Sign in as **A**. Create a recipe (publish it). Create a pack from More → Creator packs.
 2. Sign out. Sign in as **B**.
-3. Browse / save a house recipe. Add meals to **This week**.
-4. Open **Groceries** — a shopping list from the week plan, cupboard-aware, no checkout and no supermarket prices.
-5. **Cupboard** — cold-start staples, manual add for what you already own, or scan a shopping list (photo or typed). Untick as used. Mark a meal cooked and accept stock adjustments.
-6. **More → Import** — paste a caption (a sample is pre-filled) → confirm screen → save.
-7. Open **This week**, tap a day on the Mon–Sun strip, and read that day’s totals plus one card per meal (macros, ingredients, numbered method).
-8. **Creator packs** → stub-buy **Weeknight plates**. Exclusive recipes then appear under Browse.
+3. Browse or save a house recipe. Add meals to **This week**.
+4. Open **Groceries** — a list from the week plan, cupboard-aware.
+5. **Cupboard** — cold-start staples, manual add, or scan a shopping list. Untick as used. Mark a meal cooked and accept stock adjustments.
+6. **More → Import** — paste a caption → confirm → save.
+7. **Creator packs** → stub-buy **Weeknight plates**.
 
 ## Tests
 
@@ -127,12 +147,6 @@ cd worker && npm test
 cd ../app && flutter analyze && flutter test
 ```
 
-Core domain covered on both sides: scale, shopping merge, macros, cupboard.
-
 ## Out of scope
 
 Grocery API, Spoonacular dumps, App Store submit, equity / payouts, Android Play listing, live Stripe.
-
-## Product copy note
-
-British English throughout the app and this README.

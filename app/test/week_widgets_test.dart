@@ -8,16 +8,16 @@ import 'package:week_on_plate/theme.dart';
 import 'package:week_on_plate/widgets.dart';
 
 void main() {
-  testWidgets('day strip selects Monday through Sunday', (tester) async {
+  testWidgets('fullness grid jumps to a day', (tester) async {
     String selected = '2026-09-14';
     final days = [
-      for (var i = 14; i <= 20; i++) {'date': '2026-09-$i', 'slots': [], 'macros': {}},
+      for (var i = 14; i <= 20; i++) {'date': '2026-09-$i', 'slots': <Map<String, dynamic>>[], 'macros': {}},
     ];
     await tester.pumpWidget(
       MaterialApp(
         theme: weekOnPlateTheme(),
         home: Scaffold(
-          body: WeekDayStrip(
+          body: WeekFullnessGrid(
             days: days,
             selectedDate: selected,
             onSelect: (d) => selected = d,
@@ -25,48 +25,86 @@ void main() {
         ),
       ),
     );
-    expect(find.text('Mon'), findsOneWidget);
-    expect(find.text('Sun'), findsOneWidget);
-    await tester.tap(find.text('Wed'));
+    expect(find.text('M'), findsWidgets);
+    expect(find.text('S'), findsWidgets);
+    await tester.tap(find.text('W'));
     expect(selected, '2026-09-16');
   });
 
-  testWidgets('meal card shows name, bits, macros and method steps', (tester) async {
+  testWidgets('week list shows a collapsible day and a compact meal card', (tester) async {
+    tester.view.physicalSize = const Size(390, 844);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    var added = '';
     await tester.pumpWidget(
       MaterialApp(
         theme: weekOnPlateTheme(),
         home: Scaffold(
-          body: MealPlanCard(
-            slot: {
-              'slot': 'dinner',
-              'cooked': false,
-              'macros': {'kcal': 520, 'protein': 40, 'carbs': 30, 'fat': 20, 'sugar': 4},
-              'recipe': {
-                'title': 'Lemon roast chicken and potatoes',
-                'summary': 'One-tin supper.',
-                'method_steps': ['Heat the oven to 200°C.', 'Roast until cooked.'],
-                'scaled_ingredients': [
-                  {'name': 'Chicken breast', 'quantity': 600, 'unit': 'g'},
+          body: WeekPage(
+            days: [
+              {
+                'date': '2026-09-14',
+                'macros': {'kcal': 1950},
+                'slots': [
+                  {
+                    'id': 'slt_1',
+                    'slot': 'dinner',
+                    'cooked': false,
+                    'macros': {'kcal': 520, 'protein': 40, 'carbs': 30, 'fat': 20},
+                    'recipe': {
+                      'id': 'rcp_1',
+                      'title': 'Lemon roast chicken and potatoes',
+                      'minutes': 55,
+                    },
+                  },
                 ],
               },
-            },
-            onCooked: () {},
-            onRemove: () {},
+            ],
+            selectedDate: '2026-09-14',
+            expanded: {'2026-09-14': true},
+            onSelectDay: (_) {},
+            onToggleDay: (_) {},
+            onAdd: (date) => added = date,
+            onCooked: (_) {},
+            onRemove: (_) {},
+            onOpen: (_) {},
           ),
         ),
       ),
     );
-    expect(find.text('Dinner'), findsOneWidget);
+    expect(find.text('Mon · 1,950 kcal'), findsOneWidget);
     expect(find.text('Lemon roast chicken and potatoes'), findsOneWidget);
-    expect(find.text('One-tin supper.'), findsOneWidget);
-    expect(find.textContaining('Chicken breast'), findsOneWidget);
-    expect(find.text('1.'), findsOneWidget);
-    expect(find.text('Heat the oven to 200°C.'), findsOneWidget);
-    expect(find.textContaining('kcal'), findsWidgets);
+    expect(find.text('55 min'), findsOneWidget);
+    expect(find.text('520 kcal'), findsOneWidget);
+    expect(find.text('Dinner'), findsOneWidget);
+    expect(find.text('Ingredients'), findsNothing);
+    await tester.tap(find.byTooltip('Add a meal'));
+    expect(added, '2026-09-14');
   });
 
-  testWidgets('new recipe form uses Add step and Add ingredient', (tester) async {
-    tester.view.physicalSize = const Size(390, 844);
+  testWidgets('recipe picker filters the list', (tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: weekOnPlateTheme(),
+        home: Scaffold(
+          body: RecipePickerSheet(
+            recipes: [
+              {'id': 'a', 'title': 'Lemon chicken', 'minutes': 55, 'serves': 4},
+              {'id': 'b', 'title': 'Overnight oats', 'minutes': 5, 'serves': 2},
+            ],
+          ),
+        ),
+      ),
+    );
+    expect(find.text('Lemon chicken'), findsOneWidget);
+    await tester.enterText(find.byType(TextField), 'oat');
+    await tester.pump();
+    expect(find.text('Lemon chicken'), findsNothing);
+    expect(find.text('Overnight oats'), findsOneWidget);
+  });
+
+  testWidgets('new recipe form adds a step from the icon', (tester) async {
+    tester.view.physicalSize = const Size(390, 900);
     tester.view.devicePixelRatio = 1;
     addTearDown(tester.view.reset);
     final session = Session();
@@ -76,10 +114,10 @@ void main() {
         home: RecipeEditScreen(session: session),
       ),
     );
-    expect(find.text('Add step'), findsOneWidget);
-    expect(find.text('Add ingredient'), findsOneWidget);
+    expect(find.byTooltip('Add step'), findsOneWidget);
+    expect(find.byTooltip('Add ingredient'), findsOneWidget);
     expect(find.text('Step 1'), findsOneWidget);
-    await tester.tap(find.text('Add step'));
+    await tester.tap(find.byTooltip('Add step'));
     await tester.pump();
     expect(find.text('Step 2'), findsOneWidget);
   });

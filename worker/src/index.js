@@ -49,7 +49,7 @@ async function health(env) {
     stage: "demonstration",
     auth: "bearer token or session cookie, password login",
     demo_accounts:
-      "enabled: passwords published in the README can sign in on this deployment",
+      "enabled when DEMO_CREATOR_PASSWORD and DEMO_BUYER_PASSWORD are set on the Worker",
     accounts,
     db: accounts.error ? "needs_migration" : "ok",
     ts: nowIso(),

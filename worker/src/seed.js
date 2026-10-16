@@ -1,4 +1,4 @@
-import { DEMO_ACCOUNTS, hashPassword } from "./auth.js";
+import { DEMO_FIXTURES, demoAccounts, hashPassword, verifyPassword } from "./auth.js";
 import { nowIso } from "./util.js";
 
 const HOUSE = [
@@ -126,7 +126,25 @@ const PACK = [
   },
 ];
 
+const syncedFixturePasswords = new Set();
+
+async function syncFixturePassword(env, account) {
+  if (!account.password || syncedFixturePasswords.has(account.id)) return;
+  syncedFixturePasswords.add(account.id);
+  const user = await env.DB.prepare("SELECT * FROM users WHERE id = ?").bind(account.id).first();
+  if (!user) return;
+  if (await verifyPassword(user, account.password)) return;
+  const fresh = await hashPassword(account.password);
+  await env.DB.prepare(
+    `UPDATE users SET password_hash = ?, password_salt = ?, kdf = ?, kdf_iterations = ?
+     WHERE id = ? AND demo_fixture = 1`,
+  )
+    .bind(fresh.hash, fresh.salt, fresh.kdf, fresh.kdf_iterations, account.id)
+    .run();
+}
+
 async function insertUser(env, account) {
+  if (!account.password) return;
   const fresh = await hashPassword(account.password);
   const ts = nowIso();
   await env.DB.prepare(
@@ -201,10 +219,10 @@ export async function ensureSeeded(env) {
 async function ensureFixtureRoles(env) {
   try {
     await env.DB.prepare("UPDATE users SET role = ? WHERE id = ?")
-      .bind("creator", DEMO_ACCOUNTS.creator.id)
+      .bind("creator", DEMO_FIXTURES.creator.id)
       .run();
     await env.DB.prepare("UPDATE users SET role = ? WHERE id = ?")
-      .bind("buyer", DEMO_ACCOUNTS.buyer.id)
+      .bind("buyer", DEMO_FIXTURES.buyer.id)
       .run();
   } catch {
     // role column is added by migration 0002
@@ -225,21 +243,25 @@ async function refreshSeededMethods(env) {
 }
 
 async function seedNow(env) {
+  const accounts = demoAccounts(env);
   await ensureFixtureRoles(env);
   await refreshSeededMethods(env);
+  await syncFixturePassword(env, accounts.creator);
+  await syncFixturePassword(env, accounts.buyer);
   const existing = await env.DB.prepare("SELECT id FROM users WHERE id = ?")
-    .bind(DEMO_ACCOUNTS.creator.id)
+    .bind(DEMO_FIXTURES.creator.id)
     .first();
   if (existing) return { seeded: false };
+  if (!accounts.creator.password || !accounts.buyer.password) return { seeded: false };
 
-  await insertUser(env, DEMO_ACCOUNTS.creator);
-  await insertUser(env, DEMO_ACCOUNTS.buyer);
+  await insertUser(env, accounts.creator);
+  await insertUser(env, accounts.buyer);
 
   for (const recipe of HOUSE) {
-    await insertRecipe(env, recipe, DEMO_ACCOUNTS.creator.id, true);
+    await insertRecipe(env, recipe, DEMO_FIXTURES.creator.id, true);
   }
   for (const recipe of PACK) {
-    await insertRecipe(env, recipe, DEMO_ACCOUNTS.creator.id, false);
+    await insertRecipe(env, recipe, DEMO_FIXTURES.creator.id, false);
   }
 
   const ts = nowIso();
@@ -249,7 +271,7 @@ async function seedNow(env) {
   )
     .bind(
       "pck_weeknight",
-      DEMO_ACCOUNTS.creator.id,
+      DEMO_FIXTURES.creator.id,
       "Weeknight plates",
       "Two midweek recipes from Sam: miso salmon and cottage cheese pancakes.",
       900,

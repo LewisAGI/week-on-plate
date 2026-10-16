@@ -15,6 +15,7 @@ ThemeData weekOnPlateTheme() {
   );
   return ThemeData(
     useMaterial3: true,
+    fontFamily: 'Inter',
     colorScheme: base.copyWith(
       primary: kGreen,
       onPrimary: kWhite,

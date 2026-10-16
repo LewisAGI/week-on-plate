@@ -11,9 +11,12 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
+const demoCreatorPassword = String.fromEnvironment('DEMO_CREATOR_PASSWORD');
+const demoBuyerPassword = String.fromEnvironment('DEMO_BUYER_PASSWORD');
+
 class _LoginScreenState extends State<LoginScreen> {
   final email = TextEditingController(text: 'buyer@weekonplate.demo');
-  final password = TextEditingController(text: 'WeekOnPlate-Buyer-26');
+  final password = TextEditingController(text: demoBuyerPassword);
 
   @override
   void dispose() {
@@ -80,17 +83,12 @@ class _LoginScreenState extends State<LoginScreen> {
             const Text('Demonstration accounts', style: TextStyle(fontWeight: FontWeight.w700, color: kGreenDark)),
             const SizedBox(height: 8),
             OutlinedButton(
-              onPressed: () => _fill('creator@weekonplate.demo', 'WeekOnPlate-Creator-26'),
+              onPressed: () => _fill('creator@weekonplate.demo', demoCreatorPassword),
               child: const Text('Use account A — creator'),
             ),
             OutlinedButton(
-              onPressed: () => _fill('buyer@weekonplate.demo', 'WeekOnPlate-Buyer-26'),
+              onPressed: () => _fill('buyer@weekonplate.demo', demoBuyerPassword),
               child: const Text('Use account B — browse and buy'),
-            ),
-            const SizedBox(height: 16),
-            Text(
-              'Passwords are published in the README. This is a demonstration, not a live shop.',
-              style: TextStyle(color: kMuted.withValues(alpha: 0.9), fontSize: 13),
             ),
           ],
         ),

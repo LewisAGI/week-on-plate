@@ -1,14 +1,14 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
-import { DEMO_ACCOUNTS, resetLoginRateLimit } from "../src/auth.js";
+import { demoAccounts, resetLoginRateLimit } from "../src/auth.js";
 import { testEnv } from "./helpers/memory-d1.js";
 
 function req(path, { method = "GET", token, body } = {}) {
   const headers = {};
   if (token) headers.Authorization = `Bearer ${token}`;
   if (body !== undefined) headers["content-type"] = "application/json";
-  return new Request(`https://week-on-plate.lewismgodfrey.workers.dev${path}`, {
+  return new Request(`https://week-on-plate.example.workers.dev${path}`, {
     method,
     headers,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -30,7 +30,7 @@ describe("cupboard add and scan", { concurrency: false }, () => {
       await worker.fetch(
         req("/api/auth/login", {
           method: "POST",
-          body: { email: DEMO_ACCOUNTS.buyer.email, password: DEMO_ACCOUNTS.buyer.password },
+          body: { email: demoAccounts(env).buyer.email, password: demoAccounts(env).buyer.password },
         }),
         env,
       ),

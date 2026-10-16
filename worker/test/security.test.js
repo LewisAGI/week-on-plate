@@ -1,11 +1,11 @@
 import { describe, it, before } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
-import { DEMO_ACCOUNTS, resetLoginRateLimit } from "../src/auth.js";
+import { demoAccounts, resetLoginRateLimit } from "../src/auth.js";
 import { corsHeaders } from "../src/util.js";
 import { testEnv } from "./helpers/memory-d1.js";
 
-const ORIGIN_OK = "https://week-on-plate.lewismgodfrey.workers.dev";
+const ORIGIN_OK = "https://week-on-plate.example.workers.dev";
 const ORIGIN_EVIL = "https://evil.example";
 
 function req(path, { method = "GET", token, origin, body, headers = {} } = {}) {
@@ -13,7 +13,7 @@ function req(path, { method = "GET", token, origin, body, headers = {} } = {}) {
   if (origin) h.Origin = origin;
   if (token) h.Authorization = `Bearer ${token}`;
   if (body !== undefined) h["content-type"] = "application/json";
-  return new Request(`https://week-on-plate.lewismgodfrey.workers.dev${path}`, {
+  return new Request(`https://week-on-plate.example.workers.dev${path}`, {
     method,
     headers: h,
     body: body === undefined ? undefined : JSON.stringify(body),
@@ -48,8 +48,9 @@ describe("adversarial fixes", { concurrency: false }, () => {
     resetLoginRateLimit();
     const health = await jsonOf(await worker.fetch(req("/api/health"), env));
     assert.equal(health.res.status, 200);
-    creatorToken = await login(env, DEMO_ACCOUNTS.creator);
-    buyerToken = await login(env, DEMO_ACCOUNTS.buyer);
+    const accounts = demoAccounts(env);
+    creatorToken = await login(env, accounts.creator);
+    buyerToken = await login(env, accounts.buyer);
   });
 
   it("CORS denies an evil origin and never pairs a reflected Origin with credentials", async () => {
@@ -63,7 +64,7 @@ describe("adversarial fixes", { concurrency: false }, () => {
     assert.notEqual(res.headers.get("access-control-allow-credentials"), "true");
   });
 
-  it("CORS allowlists the workers.dev host and localhost with credentials", async () => {
+  it("CORS allows the Worker's own origin and localhost with credentials", async () => {
     const allowed = corsHeaders(req("/api/health", { origin: ORIGIN_OK }));
     assert.equal(allowed["access-control-allow-origin"], ORIGIN_OK);
     assert.equal(allowed["access-control-allow-credentials"], "true");

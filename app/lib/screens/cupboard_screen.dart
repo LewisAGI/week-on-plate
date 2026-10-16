@@ -77,47 +77,35 @@ class _CupboardScreenState extends State<CupboardScreen> {
       appBar: AppBar(
         title: const Text('Cupboard'),
         actions: [
-          IconButton(
-            tooltip: 'Scan shopping list',
+          IconTip(
+            message: 'Scan shopping list',
             onPressed: _scanList,
             icon: const Icon(Icons.document_scanner_outlined),
           ),
         ],
-      ),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: _manualAdd,
-        icon: const Icon(Icons.add),
-        label: const Text('Add item'),
       ),
       body: loading
           ? const Center(child: CircularProgressIndicator())
           : error != null
               ? EmptyHint(text: error!)
               : ListView(
-                  padding: const EdgeInsets.fromLTRB(16, 16, 16, 88),
+                  padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
                   children: [
-                    const Text(
-                      'Start with what is already in the house. Add items by hand, or scan a shopping list. Untick as you use it. When you mark a meal cooked, we will ask whether to take it off.',
-                      style: TextStyle(color: kMuted, height: 1.4),
-                    ),
-                    const SizedBox(height: 12),
-                    OutlinedButton.icon(
-                      onPressed: _scanList,
-                      icon: const Icon(Icons.document_scanner_outlined),
-                      label: const Text('Scan shopping list'),
-                    ),
+                    AddLine(label: 'Add item', onTap: _manualAdd),
                     if (empty) ...[
-                      const SizedBox(height: 16),
-                      const Text('What is in the cupboard?', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 18)),
-                      const SizedBox(height: 8),
+                      const Padding(
+                        padding: EdgeInsets.only(top: 16, bottom: 4),
+                        child: Text('Staples', style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18, color: kInk)),
+                      ),
                       for (final s in staples)
-                        CheckboxListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(s['name'] as String),
-                          value: chosen.contains(s['name']),
+                        CheckLine(
+                          title: s['name'] as String,
+                          quantity: '',
+                          checked: chosen.contains(s['name']),
+                          struck: false,
                           onChanged: (v) {
                             setState(() {
-                              if (v == true) {
+                              if (v) {
                                 chosen.add(s['name'] as String);
                               } else {
                                 chosen.remove(s['name']);
@@ -125,18 +113,17 @@ class _CupboardScreenState extends State<CupboardScreen> {
                             });
                           },
                         ),
+                      const SizedBox(height: 8),
                       FilledButton(onPressed: _coldStart, child: const Text('Save cupboard')),
                     ] else
                       for (final item in items)
-                        SwitchListTile(
-                          contentPadding: EdgeInsets.zero,
-                          title: Text(item['name'] as String),
-                          subtitle: Text(
-                            item['in_stock'] == 1
-                                ? qtyLabel(item['quantity'], item['unit'] as String?)
-                                : 'Used up',
-                          ),
-                          value: item['in_stock'] == 1,
+                        CheckLine(
+                          title: item['name'] as String,
+                          quantity: item['in_stock'] == 1
+                              ? qtyLabel(item['quantity'], item['unit'] as String?)
+                              : 'Used up',
+                          checked: item['in_stock'] == 1,
+                          struck: item['in_stock'] != 1,
                           onChanged: (v) async {
                             await widget.session.api.patchCupboard(item['id'] as String, {'in_stock': v});
                             await _load();
@@ -202,11 +189,6 @@ class _AddCupboardItemDialogState extends State<_AddCupboardItemDialog> {
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Something you already own — no receipt needed.',
-            style: TextStyle(color: kMuted),
-          ),
-          const SizedBox(height: 12),
           TextField(controller: name, decoration: const InputDecoration(labelText: 'Item'), autofocus: true),
           const SizedBox(height: 8),
           Row(
@@ -373,11 +355,6 @@ class _ScanShoppingListScreenState extends State<ScanShoppingListScreen> {
       body: ListView(
         padding: const EdgeInsets.all(16),
         children: [
-          const Text(
-            'Photograph a paper list after the shop, or type what you already bought. We suggest cupboard items — nothing is saved until you confirm. This is not a checkout.',
-            style: TextStyle(color: kMuted, height: 1.4),
-          ),
-          const SizedBox(height: 12),
           Row(
             children: [
               Expanded(

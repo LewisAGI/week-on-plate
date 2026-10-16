@@ -1,10 +1,16 @@
 import 'package:flutter/material.dart';
 
-import '../api/api.dart';
 import '../domain/method.dart';
 import '../state/session.dart';
 import '../theme.dart';
 import '../widgets.dart';
+
+const recipeScopes = [
+  ('browse', 'Browse'),
+  ('saved', 'Saved'),
+  ('mine', 'Mine'),
+  ('house', 'House'),
+];
 
 class RecipesScreen extends StatefulWidget {
   const RecipesScreen({super.key, required this.session});
@@ -16,11 +22,10 @@ class RecipesScreen extends StatefulWidget {
 
 class _RecipesScreenState extends State<RecipesScreen> {
   String scope = 'browse';
+  String query = '';
   List<Map<String, dynamic>> recipes = [];
   String? error;
   bool loading = true;
-
-  ApiClient get api => widget.session.api;
 
   @override
   void initState() {
@@ -34,7 +39,7 @@ class _RecipesScreenState extends State<RecipesScreen> {
       error = null;
     });
     try {
-      final data = await api.recipes(scope: scope);
+      final data = await widget.session.api.recipes(scope: scope);
       recipes = (data['recipes'] as List? ?? []).cast<Map<String, dynamic>>();
     } catch (e) {
       error = e.toString();
@@ -51,43 +56,79 @@ class _RecipesScreenState extends State<RecipesScreen> {
     await _load();
   }
 
+  Future<void> _filter() async {
+    final next = await showModalBottomSheet<String>(
+      context: context,
+      backgroundColor: kWhite,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(height: 12),
+            const Text('Show', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18)),
+            for (final s in recipeScopes)
+              ListTile(
+                title: Text(s.$2),
+                trailing: scope == s.$1 ? const Icon(Icons.check, color: kGreen) : null,
+                onTap: () => Navigator.pop(ctx, s.$1),
+              ),
+          ],
+        ),
+      ),
+    );
+    if (next == null || next == scope) return;
+    setState(() => scope = next);
+    await _load();
+  }
+
+  Future<void> _toggleSave(Map<String, dynamic> recipe) async {
+    final id = recipe['id'] as String;
+    if (recipe['saved'] == true) {
+      await widget.session.api.unsaveRecipe(id);
+    } else {
+      await widget.session.api.saveRecipe(id);
+    }
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final filtered = recipes.where((r) {
+      final title = (r['title'] as String? ?? '').toLowerCase();
+      return query.trim().isEmpty || title.contains(query.trim().toLowerCase());
+    }).toList();
     return Scaffold(
       appBar: AppBar(title: const Text('Recipes')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () async {
-          await Navigator.of(context).push(
-            MaterialPageRoute<void>(
-              builder: (_) => RecipeEditScreen(session: widget.session),
-            ),
-          );
-          await _load();
-        },
-        label: const Text('New recipe'),
-        icon: const Icon(Icons.add),
+      floatingActionButton: Tooltip(
+        message: 'New recipe',
+        triggerMode: TooltipTriggerMode.longPress,
+        child: FloatingActionButton(
+          onPressed: () async {
+            await Navigator.of(context).push(
+              MaterialPageRoute<void>(builder: (_) => RecipeEditScreen(session: widget.session)),
+            );
+            await _load();
+          },
+          child: const Icon(Icons.add),
+        ),
       ),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Wrap(
-              spacing: 8,
+            padding: const EdgeInsets.fromLTRB(16, 4, 8, 8),
+            child: Row(
               children: [
-                for (final s in [
-                  ('browse', 'Browse'),
-                  ('saved', 'Saved'),
-                  ('mine', 'Mine'),
-                  ('house', 'House'),
-                ])
-                  ChoiceChip(
-                    label: Text(s.$2),
-                    selected: scope == s.$1,
-                    onSelected: (_) {
-                      setState(() => scope = s.$1);
-                      _load();
-                    },
+                Expanded(
+                  child: TextField(
+                    decoration: const InputDecoration(
+                      hintText: 'Search',
+                      prefixIcon: Icon(Icons.search),
+                    ),
+                    onChanged: (v) => setState(() => query = v),
                   ),
+                ),
+                IconTip(message: 'Filter', onPressed: _filter, icon: const Icon(Icons.tune)),
               ],
             ),
           ),
@@ -96,27 +137,117 @@ class _RecipesScreenState extends State<RecipesScreen> {
                 ? const Center(child: CircularProgressIndicator())
                 : error != null
                     ? EmptyHint(text: error!)
-                    : ListView.builder(
-                        padding: const EdgeInsets.all(16),
-                        itemCount: recipes.length,
-                        itemBuilder: (context, i) {
-                          final r = recipes[i];
-                          return Card(
-                            margin: const EdgeInsets.only(bottom: 10),
-                            child: ListTile(
-                              title: Text(r['title'] as String),
-                              subtitle: Text(
-                                [
-                                  if (r['house_recipe'] == true) 'House recipe',
-                                  if (r['exclusive'] == true) 'Pack',
-                                  'Serves ${r['serves']}',
-                                ].join(' · '),
-                              ),
-                              onTap: () => _open(r),
-                            ),
-                          );
-                        },
+                    : RecipesGrid(
+                        recipes: filtered,
+                        onOpen: _open,
+                        onBookmark: _toggleSave,
                       ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class RecipesGrid extends StatelessWidget {
+  const RecipesGrid({
+    super.key,
+    required this.recipes,
+    required this.onOpen,
+    required this.onBookmark,
+  });
+
+  final List<Map<String, dynamic>> recipes;
+  final ValueChanged<Map<String, dynamic>> onOpen;
+  final ValueChanged<Map<String, dynamic>> onBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    if (recipes.isEmpty) return const EmptyHint(text: 'No recipes yet.');
+    return GridView.builder(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 88),
+      gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+        crossAxisCount: 2,
+        mainAxisSpacing: 14,
+        crossAxisSpacing: 12,
+        childAspectRatio: 0.72,
+      ),
+      itemCount: recipes.length,
+      itemBuilder: (context, i) => RecipeGridCard(
+        recipe: recipes[i],
+        onTap: () => onOpen(recipes[i]),
+        onBookmark: () => onBookmark(recipes[i]),
+      ),
+    );
+  }
+}
+
+class RecipeGridCard extends StatelessWidget {
+  const RecipeGridCard({
+    super.key,
+    required this.recipe,
+    required this.onTap,
+    required this.onBookmark,
+  });
+
+  final Map<String, dynamic> recipe;
+  final VoidCallback onTap;
+  final VoidCallback onBookmark;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = recipe['title'] as String? ?? 'Recipe';
+    final saved = recipe['saved'] == true;
+    final minutes = recipe['minutes'];
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Expanded(
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                FoodThumb(seed: title, borderRadius: 16),
+                if (minutes != null)
+                  Positioned(
+                    left: 8,
+                    bottom: 8,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: kInk.withValues(alpha: 0.78),
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        '$minutes min',
+                        style: const TextStyle(color: kWhite, fontSize: 12, fontWeight: FontWeight.w600),
+                      ),
+                    ),
+                  ),
+                Positioned(
+                  top: 4,
+                  right: 4,
+                  child: Tooltip(
+                    message: saved ? 'Remove bookmark' : 'Bookmark',
+                    triggerMode: TooltipTriggerMode.longPress,
+                    child: IconButton(
+                      onPressed: onBookmark,
+                      icon: Icon(saved ? Icons.bookmark : Icons.bookmark_border, color: kWhite),
+                      style: IconButton.styleFrom(backgroundColor: kGreen.withValues(alpha: 0.85)),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            title,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15, color: kInk),
           ),
         ],
       ),
@@ -136,6 +267,7 @@ class RecipeDetailScreen extends StatefulWidget {
 class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
   Map<String, dynamic>? recipe;
   String? error;
+  int? servings;
 
   @override
   void initState() {
@@ -147,6 +279,7 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     try {
       final data = await widget.session.api.recipe(widget.recipeId);
       recipe = data['recipe'] as Map<String, dynamic>?;
+      servings ??= (recipe?['serves'] as num?)?.round() ?? 2;
     } catch (e) {
       error = e.toString();
     }
@@ -164,15 +297,9 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     if (date == null || !mounted) return;
     final slot = await showModalBottomSheet<String>(
       context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            for (final s in ['breakfast', 'lunch', 'dinner', 'snack'])
-              ListTile(title: Text(s), onTap: () => Navigator.pop(ctx, s)),
-          ],
-        ),
-      ),
+      backgroundColor: kWhite,
+      shape: const RoundedRectangleBorder(borderRadius: BorderRadius.vertical(top: Radius.circular(20))),
+      builder: (_) => const SlotPickerSheet(),
     );
     if (slot == null) return;
     final y = date.toIso8601String().sliceDate;
@@ -182,6 +309,17 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
     }
   }
 
+  Future<void> _toggleSave() async {
+    final r = recipe;
+    if (r == null) return;
+    if (r['saved'] == true) {
+      await widget.session.api.unsaveRecipe(widget.recipeId);
+    } else {
+      await widget.session.api.saveRecipe(widget.recipeId);
+    }
+    await _load();
+  }
+
   @override
   Widget build(BuildContext context) {
     final r = recipe;
@@ -189,70 +327,134 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
       appBar: AppBar(
         title: Text(r?['title'] as String? ?? 'Recipe'),
         actions: [
-          if (r?['mine'] == true)
-            IconButton(
-              tooltip: 'Edit',
-              onPressed: () async {
-                await Navigator.of(context).push(
-                  MaterialPageRoute<void>(
-                    builder: (_) => RecipeEditScreen(session: widget.session, recipe: r),
-                  ),
-                );
-                await _load();
-              },
-              icon: const Icon(Icons.edit_outlined),
+          if (r != null) ...[
+            IconTip(
+              message: r['saved'] == true ? 'Remove bookmark' : 'Bookmark',
+              onPressed: _toggleSave,
+              icon: Icon(r['saved'] == true ? Icons.bookmark : Icons.bookmark_border),
             ),
+            IconTip(
+              message: 'Add to this week',
+              onPressed: _addToWeek,
+              icon: const Icon(Icons.calendar_month_outlined),
+            ),
+            PopupMenuButton<String>(
+              tooltip: 'More',
+              icon: const Icon(Icons.more_vert),
+              onSelected: (value) async {
+                if (value == 'edit') {
+                  await Navigator.of(context).push(
+                    MaterialPageRoute<void>(
+                      builder: (_) => RecipeEditScreen(session: widget.session, recipe: r),
+                    ),
+                  );
+                  await _load();
+                }
+                if (value == 'publish') {
+                  await widget.session.api.publishRecipe(widget.recipeId);
+                  await _load();
+                }
+              },
+              itemBuilder: (context) => [
+                if (r['mine'] == true) const PopupMenuItem(value: 'edit', child: Text('Edit')),
+                if (r['mine'] == true) const PopupMenuItem(value: 'publish', child: Text('Publish')),
+              ],
+            ),
+          ],
         ],
       ),
       body: r == null
           ? Center(child: error == null ? const CircularProgressIndicator() : Text(error!))
-          : ListView(
-              padding: const EdgeInsets.all(16),
-              children: [
-                if ((r['summary'] as String?)?.isNotEmpty == true)
-                  Text(r['summary'] as String, style: const TextStyle(color: kMuted)),
-                const SizedBox(height: 8),
-                Text('Serves ${r['serves']} · scaled to your household', style: const TextStyle(color: kGreenDark)),
-                const SizedBox(height: 12),
-                MacrosRow(macros: (r['scaled_macros'] as Map<String, dynamic>?) ?? {}),
-                const SizedBox(height: 16),
-                const Text('Ingredients', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen)),
-                for (final ing in (r['scaled_ingredients'] as List? ?? []))
-                  ListTile(
-                    dense: true,
-                    contentPadding: EdgeInsets.zero,
-                    title: Text(
-                      '${qtyLabel(ing['quantity'], ing['unit'] as String?)} ${ing['name']}'.trim(),
-                    ),
-                  ),
-                const SizedBox(height: 8),
-                const Text('Method', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen)),
-                const SizedBox(height: 8),
-                MethodStepsList.fromRecipe(r),
-                const SizedBox(height: 20),
-                FilledButton(onPressed: _addToWeek, child: const Text('Add to this week')),
-                const SizedBox(height: 8),
-                OutlinedButton(
-                  onPressed: () async {
-                    if (r['saved'] == true) {
-                      await widget.session.api.unsaveRecipe(widget.recipeId);
-                    } else {
-                      await widget.session.api.saveRecipe(widget.recipeId);
-                    }
-                    await _load();
-                  },
-                  child: Text(r['saved'] == true ? 'Remove from saved' : 'Save recipe'),
-                ),
-                if (r['mine'] == true)
-                  TextButton(
-                    onPressed: () async {
-                      await widget.session.api.publishRecipe(widget.recipeId);
-                      await _load();
-                    },
-                    child: const Text('Publish'),
-                  ),
-              ],
+          : RecipePage(
+              recipe: r,
+              servings: servings ?? (r['serves'] as num?)?.round() ?? 2,
+              onServings: (v) => setState(() => servings = v),
             ),
+    );
+  }
+}
+
+class RecipePage extends StatelessWidget {
+  const RecipePage({
+    super.key,
+    required this.recipe,
+    required this.servings,
+    required this.onServings,
+  });
+
+  final Map<String, dynamic> recipe;
+  final int servings;
+  final ValueChanged<int> onServings;
+
+  @override
+  Widget build(BuildContext context) {
+    final title = recipe['title'] as String? ?? 'Recipe';
+    final minutes = recipe['minutes'];
+    final steps = stepsFromRecipe(recipe);
+    final ingredients = scaledIngredients(recipe, servings);
+    final macros = scaledMacros(recipe, servings);
+    final meta = [
+      if (minutes != null) '$minutes min',
+      '${steps.length} ${steps.length == 1 ? 'step' : 'steps'}',
+      if (recipe['house_recipe'] == true) 'House',
+      if (recipe['exclusive'] == true) 'Pack',
+    ].join(' · ');
+
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 0, 16, 32),
+      children: [
+        AspectRatio(
+          aspectRatio: 16 / 10,
+          child: FoodThumb(seed: title, borderRadius: 18),
+        ),
+        const SizedBox(height: 14),
+        Text(meta, style: const TextStyle(color: kMuted, fontSize: 14)),
+        const SizedBox(height: 8),
+        ServingsStepper(value: servings, onChanged: onServings),
+        const SizedBox(height: 12),
+        MacroCard(macros: macros),
+        const SizedBox(height: 20),
+        const Text('Ingredients', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: kInk)),
+        const SizedBox(height: 8),
+        GridView.builder(
+          shrinkWrap: true,
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: 2,
+            mainAxisExtent: 72,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 8,
+          ),
+          itemCount: ingredients.length,
+          itemBuilder: (context, i) {
+            final ing = ingredients[i];
+            final name = ing['name'] as String? ?? '';
+            return Row(
+              children: [
+                const Icon(Icons.circle, size: 8, color: kGreen),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(name, maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      Text(
+                        qtyLabel(ing['quantity'], ing['unit'] as String?),
+                        style: const TextStyle(color: kGreen, fontWeight: FontWeight.w700),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            );
+          },
+        ),
+        const SizedBox(height: 16),
+        const Text('Steps', style: TextStyle(fontWeight: FontWeight.w700, fontSize: 18, color: kInk)),
+        const SizedBox(height: 12),
+        MethodStepsList(steps: steps),
+      ],
     );
   }
 }
@@ -350,8 +552,7 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
     return out;
   }
 
-  List<String> _collectSteps() =>
-      steps.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
+  List<String> _collectSteps() => steps.map((c) => c.text.trim()).where((s) => s.isNotEmpty).toList();
 
   Future<void> _save() async {
     setState(() => busy = true);
@@ -390,12 +591,24 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
           const SizedBox(height: 8),
           TextField(controller: summary, decoration: const InputDecoration(labelText: 'Summary')),
           const SizedBox(height: 8),
-          TextField(controller: serves, decoration: const InputDecoration(labelText: 'Serves'), keyboardType: TextInputType.number),
+          TextField(
+            controller: serves,
+            decoration: const InputDecoration(labelText: 'Serves'),
+            keyboardType: TextInputType.number,
+          ),
           const SizedBox(height: 16),
-          const Text('Ingredients', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text('One field per ingredient — not a blob of text.', style: TextStyle(color: kMuted)),
-          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Ingredients', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 16)),
+              ),
+              IconTip(
+                message: 'Add ingredient',
+                onPressed: () => setState(() => ingredients.add(_IngredientDraft())),
+                icon: const Icon(Icons.add),
+              ),
+            ],
+          ),
           for (var i = 0; i < ingredients.length; i++)
             Card(
               key: ObjectKey(ingredients[i]),
@@ -412,8 +625,8 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
                             decoration: const InputDecoration(labelText: 'Ingredient'),
                           ),
                         ),
-                        IconButton(
-                          tooltip: 'Remove ingredient',
+                        IconTip(
+                          message: 'Remove ingredient',
                           onPressed: ingredients.length <= 1
                               ? null
                               : () => setState(() {
@@ -451,19 +664,19 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
                 ),
               ),
             ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => setState(() => ingredients.add(_IngredientDraft())),
-              icon: const Icon(Icons.add),
-              label: const Text('Add ingredient'),
-            ),
-          ),
           const SizedBox(height: 12),
-          const Text('Method', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 16)),
-          const SizedBox(height: 4),
-          const Text('One step per line. We keep them numbered.', style: TextStyle(color: kMuted)),
-          const SizedBox(height: 8),
+          Row(
+            children: [
+              const Expanded(
+                child: Text('Method', style: TextStyle(fontWeight: FontWeight.w700, color: kGreen, fontSize: 16)),
+              ),
+              IconTip(
+                message: 'Add step',
+                onPressed: () => setState(() => steps.add(TextEditingController())),
+                icon: const Icon(Icons.add),
+              ),
+            ],
+          ),
           for (var i = 0; i < steps.length; i++)
             Padding(
               key: ObjectKey(steps[i]),
@@ -484,8 +697,8 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
                       decoration: InputDecoration(labelText: 'Step ${i + 1}'),
                     ),
                   ),
-                  IconButton(
-                    tooltip: 'Remove step',
+                  IconTip(
+                    message: 'Remove step',
                     onPressed: steps.length <= 1
                         ? null
                         : () => setState(() {
@@ -497,14 +710,6 @@ class _RecipeEditScreenState extends State<RecipeEditScreen> {
                 ],
               ),
             ),
-          Align(
-            alignment: Alignment.centerLeft,
-            child: TextButton.icon(
-              onPressed: () => setState(() => steps.add(TextEditingController())),
-              icon: const Icon(Icons.add),
-              label: const Text('Add step'),
-            ),
-          ),
           SwitchListTile(
             title: const Text('Publish so others can browse it'),
             value: publish,

@@ -8,22 +8,30 @@ const DEFAULT_LOGIN_ATTEMPT_LIMIT = 8;
 
 const loginBuckets = new Map();
 
-export const DEMO_ACCOUNTS = {
+export const DEMO_FIXTURES = {
   creator: {
     id: "usr_demo_creator",
     email: "creator@weekonplate.demo",
-    password: "WeekOnPlate-Creator-26",
     display_name: "Sam Taylor",
     role: "creator",
   },
   buyer: {
     id: "usr_demo_buyer",
     email: "buyer@weekonplate.demo",
-    password: "WeekOnPlate-Buyer-26",
     display_name: "Jordan Ellis",
     role: "buyer",
   },
 };
+
+/** Passwords come from Worker env / `wrangler secret`, never from source. */
+export function demoAccounts(env = {}) {
+  const creatorPassword = typeof env.DEMO_CREATOR_PASSWORD === "string" ? env.DEMO_CREATOR_PASSWORD : "";
+  const buyerPassword = typeof env.DEMO_BUYER_PASSWORD === "string" ? env.DEMO_BUYER_PASSWORD : "";
+  return {
+    creator: { ...DEMO_FIXTURES.creator, password: creatorPassword },
+    buyer: { ...DEMO_FIXTURES.buyer, password: buyerPassword },
+  };
+}
 
 export function resetLoginRateLimit() {
   loginBuckets.clear();
