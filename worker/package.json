@@ -10,6 +10,6 @@
     "deploy": "wrangler d1 migrations apply week-on-plate-db --remote && wrangler deploy --var BUILD_SHA:$(git -C .. rev-parse HEAD) --var APP_VERSION:0.1.2"
   },
   "devDependencies": {
-    "wrangler": "^4.37.0"
+    "wrangler": "^4.151.0"
   }
 }

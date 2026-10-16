@@ -1,7 +1,7 @@
 import { describe, it, beforeEach } from "node:test";
 import assert from "node:assert/strict";
 import worker from "../src/index.js";
-import { DEMO_FIXTURES, demoAccounts, resetLoginRateLimit } from "../src/auth.js";
+import { DEMO_FIXTURES, demoAccounts } from "../src/auth.js";
 import { ensureSeeded, resetFixturePasswordSync } from "../src/seed.js";
 import { testEnv } from "./helpers/memory-d1.js";
 
@@ -15,7 +15,6 @@ function loginRequest(email, password) {
 
 describe("fixture seed", () => {
   beforeEach(() => {
-    resetLoginRateLimit();
     resetFixturePasswordSync();
   });
 

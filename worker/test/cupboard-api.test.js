@@ -24,7 +24,7 @@ describe("cupboard add and scan", { concurrency: false }, () => {
   let token;
 
   before(async () => {
-    resetLoginRateLimit();
+    await resetLoginRateLimit(env);
     await worker.fetch(req("/api/health"), env);
     const login = await jsonOf(
       await worker.fetch(

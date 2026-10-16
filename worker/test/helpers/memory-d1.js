@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { fileURLToPath } from "node:url";
@@ -7,8 +7,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "../..");
 
 export function createMemoryD1() {
   const db = new DatabaseSync(":memory:");
-  db.exec(readFileSync(join(root, "migrations/0001_init.sql"), "utf8"));
-  db.exec(readFileSync(join(root, "migrations/0002_roles.sql"), "utf8"));
+  const migrationsDir = join(root, "migrations");
+  for (const name of readdirSync(migrationsDir)
+    .filter((file) => file.endsWith(".sql"))
+    .sort()) {
+    db.exec(readFileSync(join(migrationsDir, name), "utf8"));
+  }
   return {
     prepare(sql) {
       return {
